@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:metabilim/models/user_model.dart';
-import 'package:metabilim/pages/coach/homework_flow/preview_schedule_page.dart'; // EtudSlot modelini kullanmak için
+import 'package:metabilim/pages/coach/homework_flow/preview_schedule_page.dart'; // EtudSlot modeli için bu gerekli
+import 'package:metabilim/pages/coach/homework_flow/select_effort_page.dart'; // Yeni efor sayfamızı ekliyoruz
 
 // Materyalleri temsil eden basit bir model
 class MaterialItem {
@@ -69,38 +70,26 @@ class _SelectMaterialsPageState extends State<SelectMaterialsPage> {
         final parts = fullLessonName.split(' ');
         if (parts.length < 2) continue;
 
-        final String lessonType = parts[0]; // TYT veya AYT
+        final String lessonType = parts[0];
         final String lessonName = parts.sublist(1).join(' ');
-
-        print('>> Materyal aranıyor: SEVİYE=[$lessonType], DERS=[$lessonName]');
 
         List<MaterialItem> items = [];
 
-        // DÜZELTME: Sorgudaki alan adları ('level' ve 'subject') veritabanı ile eşleştirildi.
         final booksSnapshot = await FirebaseFirestore.instance
             .collection('books')
-            .where('level', isEqualTo: lessonType)   // 'type' -> 'level'
-            .where('subject', isEqualTo: lessonName) // 'lesson' -> 'subject'
+            .where('level', isEqualTo: lessonType)
+            .where('subject', isEqualTo: lessonName)
             .get();
-
-        print('  >> Bulunan Kitap Sayısı: ${booksSnapshot.docs.length}');
         for (var doc in booksSnapshot.docs) {
           final data = doc.data();
-          // Kitap adını almak için doğru alan adı 'bookName' değil, 'topics' listesinin bir elemanı olabilir
-          // veya daha genel bir 'name' alanı olabilir. Şimdilik 'bookType' ve 'publisher' kullanalım.
-          // Eğer kitap adı farklı bir alanda tutuluyorsa burayı güncellememiz gerekebilir.
           items.add(MaterialItem(id: doc.id, name: data['bookType'] ?? 'İsimsiz Kitap', publisher: data['publisher'], collectionName: 'books'));
         }
 
-        // DÜZELTME: Denemeler için de doğru alan adları kullanıldı.
-        // `practices` koleksiyonunda da 'level' ve 'subject' olduğunu varsayıyoruz.
         final practicesSnapshot = await FirebaseFirestore.instance
             .collection('practices')
             .where('level', isEqualTo: lessonType)
             .where('subject', isEqualTo: lessonName)
             .get();
-
-        print('  >> Bulunan Deneme Sayısı: ${practicesSnapshot.docs.length}');
         for (var doc in practicesSnapshot.docs) {
           final data = doc.data();
           items.add(MaterialItem(id: doc.id, name: data['practiceName'] ?? 'İsimsiz Deneme', publisher: data['publisher'], collectionName: 'practices'));
@@ -119,13 +108,49 @@ class _SelectMaterialsPageState extends State<SelectMaterialsPage> {
     }
   }
 
-  void _saveHomeworkProgram() {
-    // ...
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-      content: Text('Program başarıyla kaydedildi!'),
-      backgroundColor: Colors.green,
-    ));
-    Navigator.of(context).popUntil((route) => route.isFirst);
+  void _continueToEffortPage() {
+    final List<String> selectedMaterialIds = [];
+    _materialsByLesson.values.forEach((materialList) {
+      for (var material in materialList) {
+        if (material.isSelected) {
+          selectedMaterialIds.add(material.id);
+        }
+      }
+    });
+
+    if (selectedMaterialIds.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Lütfen devam etmeden önce en az bir materyal seçin.'),
+        backgroundColor: Colors.red,
+      ));
+      return;
+    }
+
+    final Map<String, int> lessonEtuds = {};
+    widget.schedule.values.forEach((slots) {
+      for (var slot in slots) {
+        if (slot.lessonName != null && !slot.isDigital) {
+          lessonEtuds.update(
+            slot.fullLessonName,
+                (value) => value + 1,
+            ifAbsent: () => 1,
+          );
+        }
+      }
+    });
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => SelectEffortPage(
+          studentId: widget.student.uid,
+          startDate: widget.startDate,
+          endDate: widget.endDate,
+          lessonEtuds: lessonEtuds,
+          selectedMaterials: selectedMaterialIds,
+        ),
+      ),
+    );
   }
 
   @override
@@ -176,12 +201,14 @@ class _SelectMaterialsPageState extends State<SelectMaterialsPage> {
       bottomNavigationBar: Padding(
         padding: const EdgeInsets.all(16.0),
         child: ElevatedButton(
-          onPressed: _isLoading ? null : _saveHomeworkProgram,
+          onPressed: _isLoading ? null : _continueToEffortPage,
           style: ElevatedButton.styleFrom(
             padding: const EdgeInsets.symmetric(vertical: 16),
+            // --- HATA BURADAYDI, DÜZELTİLDİ ---
+            // Fazladan yazılan "Rectangle" kelimesi silindi.
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
-          child: const Text('Programı Kaydet ve Bitir', style: TextStyle(fontSize: 16)),
+          child: const Text('Efor Belirlemeye Devam Et', style: TextStyle(fontSize: 16)),
         ),
       ),
     );
