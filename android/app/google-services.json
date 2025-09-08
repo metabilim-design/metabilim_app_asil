@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "496213153614",
+    "project_id": "metabilim-4ef76",
+    "storage_bucket": "metabilim-4ef76.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:496213153614:android:2907b604b14520090ef01f",
+        "android_client_info": {
+          "package_name": "com.example.metabilim"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDnd3uvz4P5Y9cxhbAMm4NEh-GQHRLTL-w"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

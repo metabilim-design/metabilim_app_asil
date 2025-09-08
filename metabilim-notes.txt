@@ -1,0 +1,43 @@
+KAYIT İŞİ:
+	1)Eğitim koçu ve veli rolü eklenicek //Muzo ++
+	2)Öğrencilere sınıf bilgisi atanıcak //Muzo ++
+	3)Öğrenci eğitim koçu eşleştirmesi yapılıcak //Muzo Admin panelindeki değişikliklerden sonra
+	4)Uygulamaya özel qr kod eklenicek  //Muzo uygulama bittikten sonra
+
+ARAYÜZ İŞİ:
+	1)Mentor:
+		***a)Öğrenciler kısmındaki listeleme öğrenci ve etüte göre değişicek artık Ati
+		b)Mentor ödev veremez mentor ödev kontrol edebilir ödev verme işi eğitim koçuna geçicek Ati
+		c)Yoklama alma işini saat saate dökelim kanki Ati
+		d)Kitap ekleme işine fasikül kategorisi getiricez Ati
+		e)Kitap ekleme sayfasında kitabın son sayfası sorulucak Ati
+		f)Kitabın zorluğu seçilicek 3 yıldız üzerinden Ati
+		f)Tüm sınıf düzeylerini eklicez düzey sorarken sadece TYT AYT olmicak ona göre ders içerikleri fln değişicek tabi Ati
+		g)Öğrenci hakkında özel not düşme Ati
+	2)Admin:
+		a)Deneme yükleme sayfası ayarlanıcak 
+		b)Sınıfa özel etüt ayarlama sayfası ayarlanıcak
+		c)Bireyin dijital ve özel derslerini sabitleme
+		d)Eğitim koçunun altına öğrenciyi verme işini ayarlasın admin page
+	3)Eğitimsel koç:
+		a)Ödev verme sayfasını yükle sırtına //Muzo ++
+
+ÖDEV VERME İŞİ:
+	1)Öğrenci seçme çok güzel
+	2)Sonraki arayüz mükememl
+	3)Tarih aralığı işi de güzel
+	4)Dersleri seçiniz ekranı da güzel
+	5)Ara sayfa getiricez:
+		a)Şimdi seçilen dersleri kaçar etüt çalışıcamızı seçicez seçilen tarihteki etüt sayısı dolucak
+		b)Önizleme ve dağıtım mekanizması hemen bu sayfadan sonra gelicek
+		c)Sonrasında materyal seçimi sayfası
+		d)Sonrasında konu seçimi yapıyoruz
+		e)Manuel sayfa düzenleme yok knk
+		f)Her etütün dk cinsinden çarpan değeri polucak mesela 50 dk da 50 soru 60 dk da 60 soru haline getirelim 
+		g)Kitabın zorluğu*Dersin zorluğu*Etütün süresi*Efor bu 4 çarpan dilkkate alınarak önceden hazırlanmış etütler konular itinayla dağıtılıcak
+		h)Program oluştur butonuna bastığında eğer ki itinayla bi yerleştirme yapılamassa iki ihtimal var birincisi zorla itinayla yerleştir diğeri de Sonraki konulardna ekleme yap
+	6)Mevcut Programı düzenleme işi:
+		a)Aynı oluşturulmuş programın üstüne sadece ve sadece üç soru aynı kitaplarla kaldığın yerden devam et,aynı kitaplarla farklı konudan devam et,Farklı kitaplardan devam et.
+	
+DENEME ANALİZ İŞİ:
+	1)Branş-genel,Dersler listelencek-TYT,Ayt listelnekce istatiklerim butonıu line chart grafiği last days filtrelemesi
