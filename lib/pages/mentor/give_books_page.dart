@@ -4,7 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class GiveBooksPage extends StatefulWidget {
-  final List<dynamic> topics;
+  final List<dynamic> topics; // Bu artık [{'konu': '..', 'sayfa': '15'}] formatında geliyor
   final String materialType;
 
   const GiveBooksPage({
@@ -20,19 +20,13 @@ class GiveBooksPage extends StatefulWidget {
 class _GiveBooksPageState extends State<GiveBooksPage> {
   final _formKey = GlobalKey<FormState>();
   bool _isSaving = false;
-
-  // Controller'lar
   final TextEditingController _publisherController = TextEditingController();
   final TextEditingController _lastPageController = TextEditingController();
-
-  // State değişkenleri
   String? _selectedLevel;
   String? _selectedBookType;
   String? _selectedSubject;
   String? _selectedPublicationYear;
   int _difficultyRating = 3;
-
-  // Listeler
   final List<String> _tytSubjects = ['Türkçe', 'Matematik', 'Fizik', 'Kimya', 'Biyoloji', 'Tarih', 'Coğrafya', 'Felsefe', 'Din Kültürü'];
   final List<String> _aytSubjects = ['Matematik', 'Fizik', 'Kimya', 'Biyoloji', 'Edebiyat', 'Tarih-1', 'Coğrafya-1', 'Tarih-2', 'Coğrafya-2', 'Felsefe Grubu'];
   final List<String> _publicationYears = List.generate(10, (index) => '${2016 + index}-${2017 + index}').reversed.toList();
@@ -55,40 +49,56 @@ class _GiveBooksPageState extends State<GiveBooksPage> {
 
   Future<void> _saveMaterialToFirebase() async {
     if (!_formKey.currentState!.validate()) return;
-
-    // Bu kontrol sayesinde aşağıdaki ! işaretlerini güvenle kullanabiliriz.
     if (_selectedLevel == null || _selectedBookType == null || _selectedPublicationYear == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Lütfen tüm seçimleri yapın.'), backgroundColor: Colors.red),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Lütfen tüm seçimleri yapın.'), backgroundColor: Colors.red));
       return;
     }
     setState(() => _isSaving = true);
+
+    // YENİ KAYIT MANTIĞI
+    final List<Map<String, dynamic>> finalTopics = [];
+    final int bookLastPage = int.tryParse(_lastPageController.text.trim()) ?? 0;
+
+    for (int i = 0; i < widget.topics.length; i++) {
+      final topic = widget.topics[i] as Map<String, dynamic>;
+      final String konu = topic['konu'] ?? '';
+      final int startPage = int.tryParse(topic['sayfa']?.toString() ?? '0') ?? 0;
+      int endPage;
+
+      if (i < widget.topics.length - 1) {
+        final nextTopic = widget.topics[i + 1] as Map<String, dynamic>;
+        endPage = (int.tryParse(nextTopic['sayfa']?.toString() ?? '0') ?? 0) - 1;
+      } else {
+        endPage = bookLastPage;
+      }
+
+      finalTopics.add({
+        'konu': konu,
+        'start_page': startPage,
+        'end_page': endPage,
+      });
+    }
 
     try {
       await FirebaseFirestore.instance.collection('books').add({
         'level': _selectedLevel!,
         'bookType': _selectedBookType!,
         'publicationYear': _selectedPublicationYear!,
-        'subject': _selectedSubject!, // DÜZELTME BURADA
+        'subject': _selectedSubject!,
         'publisher': _publisherController.text.trim(),
         'difficulty': _difficultyRating,
-        'lastPage': int.tryParse(_lastPageController.text.trim()) ?? 0,
-        'topics': widget.topics,
+        'lastPage': bookLastPage,
+        'topics': finalTopics, // YENİ FORMATLANMIŞ LİSTEYİ KAYDET
         'createdAt': FieldValue.serverTimestamp(),
       });
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${widget.materialType} başarıyla kaydedildi!'), backgroundColor: Colors.green),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${widget.materialType} başarıyla kaydedildi!'), backgroundColor: Colors.green));
         Navigator.of(context).popUntil((route) => route.isFirst);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Kayıt sırasında bir hata oluştu: ${e.toString()}')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Kayıt sırasında bir hata oluştu: ${e.toString()}')));
       }
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -97,6 +107,7 @@ class _GiveBooksPageState extends State<GiveBooksPage> {
 
   @override
   Widget build(BuildContext context) {
+    // Bu sayfanın build metodu aynı kalabilir.
     return Scaffold(
       appBar: AppBar(
         title: Text('${widget.materialType} Bilgilerini Girin', style: GoogleFonts.poppins()),

@@ -1,28 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 // ----- MODELLER: Veritabanından gelen verileri bu sağlam yapılarda tutacağız -----
 
 class Topic {
-  final String name;
+  final String konu;
   final int startPage;
   final int endPage;
   bool isSelected;
 
   Topic({
-    required this.name,
+    required this.konu,
     required this.startPage,
     required this.endPage,
     this.isSelected = false,
   });
 
-  int get pageCount => endPage - startPage;
+  int get pageCount => endPage - startPage > 0 ? endPage - startPage : 0;
 
   factory Topic.fromMap(Map<String, dynamic> map) {
     return Topic(
-      name: map['name'] ?? 'İsimsiz Konu',
-      startPage: map['startPage'] ?? 0,
-      endPage: map['endPage'] ?? 0,
+      konu: map['konu'] ?? 'İsimsiz Konu',
+      startPage: map['start_page'] ?? 0, // Yeni formata uygun
+      endPage: map['end_page'] ?? 0,     // Yeni formata uygun
     );
   }
 }
@@ -31,7 +32,7 @@ class Book {
   final String id;
   final String name;
   final String lesson;
-  final int difficulty;
+  final int difficulty; // 1-5 arası zorluk
   final List<Topic> topics;
 
   Book({
@@ -49,9 +50,9 @@ class SelectTopicPage extends StatefulWidget {
   final String studentId;
   final DateTime startDate;
   final DateTime endDate;
-  final Map<String, int> lessonEtuds;
-  final List<String> selectedMaterials;
-  final int effortRating;
+  final Map<String, int> lessonEtuds; // Örn: {'TYT Matematik': 8}
+  final List<String> selectedMaterials; // Seçilen kitapların ID'leri
+  final int effortRating; // 1-5 arası efor
 
   const SelectTopicPage({
     Key? key,
@@ -82,60 +83,39 @@ class _SelectTopicPageState extends State<SelectTopicPage> {
 
   Future<void> _initializePageData() async {
     await _fetchBooksAndCalculateQuotas();
-    setState(() {
-      _isLoading = false;
-    });
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
   // ----- MATEMATİK VE VERİ ÇEKME İŞLEMLERİ -----
 
   Future<void> _fetchBooksAndCalculateQuotas() async {
-    print('Veri çekme ve hesaplama başlıyor...');
-    if (widget.selectedMaterials.isEmpty) {
-      print('Seçili materyal bulunamadı. İşlem durduruldu.');
-      return;
-    }
+    if (widget.selectedMaterials.isEmpty) return;
 
-    print('Firestore\'dan şu kitaplar çekilecek: ${widget.selectedMaterials}');
     final booksSnapshot = await FirebaseFirestore.instance
         .collection('books')
         .where(FieldPath.documentId, whereIn: widget.selectedMaterials)
         .get();
-    print('${booksSnapshot.docs.length} adet kitap verisi çekildi.');
 
     final List<Book> allBooks = [];
     for (var doc in booksSnapshot.docs) {
       final data = doc.data();
-      // DİKKAT: Firestore'dan gelen 'topics' alanını kontrol ediyoruz.
       final List<dynamic> topicsData = data['topics'] ?? [];
-
-      print('--- Kitap ID: ${doc.id} ---');
-      print('  Kitap Adı: ${data['bookType']}');
-      // HATA AYIKLAMA: 'topics' alanı var mı ve liste mi diye kontrol et.
-      if (data['topics'] == null) {
-        print('  UYARI: Bu kitapta "topics" alanı bulunamadı!');
-      } else if (topicsData.isEmpty) {
-        print('  UYARI: "topics" alanı var ama içi boş!');
-      } else {
-        print('  Başarıyla ${topicsData.length} adet konu bulundu.');
-      }
 
       allBooks.add(Book(
         id: doc.id,
         name: data['bookType'] ?? 'İsimsiz Kitap',
         lesson: '${data['level']} ${data['subject']}',
-        difficulty: data['difficultyRating'] ?? 3,
-        // Gelen veriyi Topic nesnelerine dönüştürüyoruz.
-        topics: topicsData.map((topicMap) => Topic.fromMap(topicMap as Map<String, dynamic>)).toList(),
+        difficulty: data['difficulty'] ?? 3,
+        topics: topicsData.map((topicMap) => Topic.fromMap(topicMap)).toList(),
       ));
     }
 
     for (var book in allBooks) {
-      if (_booksByLesson.containsKey(book.lesson)) {
-        _booksByLesson[book.lesson]!.add(book);
-      } else {
-        _booksByLesson[book.lesson] = [book];
-      }
+      _booksByLesson.putIfAbsent(book.lesson, () => []).add(book);
     }
 
     for (String lessonName in widget.lessonEtuds.keys) {
@@ -153,7 +133,6 @@ class _SelectTopicPageState extends State<SelectTopicPage> {
 
       _totalPageQuotas[lessonName] = quota;
       _solvedPageQuotas[lessonName] = 0;
-      print('Hesaplanan Kota -> Ders: $lessonName, Hedef: $quota sayfa');
     }
   }
 
@@ -193,7 +172,7 @@ class _SelectTopicPageState extends State<SelectTopicPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Konu Seçimi'),
+        title: Text('Konu Seçimi', style: GoogleFonts.poppins()),
       ),
       body: _isLoading
           ? Center(child: CircularProgressIndicator())
@@ -213,7 +192,7 @@ class _SelectTopicPageState extends State<SelectTopicPage> {
             padding: const EdgeInsets.symmetric(vertical: 16),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
-          child: const Text('Programı Önizle ve Bitir', style: TextStyle(fontSize: 16)),
+          child: Text('Programı Önizle ve Bitir', style: GoogleFonts.poppins(fontSize: 16)),
         ),
       ),
     );
@@ -234,13 +213,13 @@ class _SelectTopicPageState extends State<SelectTopicPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(lessonName, style: Theme.of(context).textTheme.headlineSmall),
+            Text(lessonName, style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold)),
             SizedBox(height: 12),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('Hedef: $solvedPages / $totalPages sayfa', style: TextStyle(fontWeight: FontWeight.bold)),
-                Text('${(progress * 100).toStringAsFixed(0)}%', style: TextStyle(fontWeight: FontWeight.bold)),
+                Text('Hedef: $solvedPages / $totalPages sayfa', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+                Text('${(progress * 100).toStringAsFixed(0)}%', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
               ],
             ),
             SizedBox(height: 4),
@@ -250,7 +229,7 @@ class _SelectTopicPageState extends State<SelectTopicPage> {
                 value: progress,
                 minHeight: 10,
                 backgroundColor: Colors.grey[300],
-                valueColor: AlwaysStoppedAnimation<Color>(solvedPages > totalPages ? Colors.orange : Colors.green),
+                valueColor: AlwaysStoppedAnimation<Color>(solvedPages > totalPages ? Colors.orangeAccent : Colors.lightBlueAccent),
               ),
             ),
             Divider(height: 20, thickness: 1),
@@ -262,18 +241,17 @@ class _SelectTopicPageState extends State<SelectTopicPage> {
   }
 
   Widget _buildBookTile(Book book, String lessonName) {
-    // Eğer bir kitabın konusu yoksa, o kitabı göstermenin anlamı yok.
     if(book.topics.isEmpty) return SizedBox.shrink();
 
     return ExpansionTile(
-      title: Text(book.name, style: TextStyle(fontWeight: FontWeight.w600)),
+      title: Text(book.name, style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
       subtitle: Text('Zorluk: ${book.difficulty} / 5'),
       tilePadding: EdgeInsets.zero,
       childrenPadding: EdgeInsets.only(left: 16),
-      initiallyExpanded: true, // Konuların direkt açık gelmesi için
+      initiallyExpanded: true,
       children: book.topics.map((topic) {
         return CheckboxListTile(
-          title: Text(topic.name),
+          title: Text(topic.konu),
           subtitle: Text('Sayfa ${topic.startPage} - ${topic.endPage} (${topic.pageCount} sayfa)'),
           value: topic.isSelected,
           onChanged: (bool? value) {

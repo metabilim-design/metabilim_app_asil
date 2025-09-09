@@ -9,12 +9,12 @@ import 'give_books_page.dart';
 
 class ConfirmUploadPage extends StatefulWidget {
   final List<File> imageFiles;
-  final String materialType; // YENİ
+  final String materialType;
 
   const ConfirmUploadPage({
     super.key,
     required this.imageFiles,
-    required this.materialType, // YENİ
+    required this.materialType,
   });
 
   @override
@@ -23,9 +23,9 @@ class ConfirmUploadPage extends StatefulWidget {
 
 class _ConfirmUploadPageState extends State<ConfirmUploadPage> {
   bool _isProcessing = false;
+  List<dynamic> _rawParsedTopics = []; // Ham, işlenmemiş konuları burada saklayacağız
 
   Future<void> _processImagesWithAI() async {
-    // ... Bu fonksiyonun içi büyük ölçüde aynı
     if (widget.imageFiles.isEmpty || !mounted) return;
     setState(() => _isProcessing = true);
 
@@ -93,6 +93,7 @@ $fullText
       });
 
       if (mounted) {
+        _rawParsedTopics = parsedData; // Ham veriyi sakla
         setState(() => _isProcessing = false);
         _showResultDialog(parsedData);
       }
@@ -117,10 +118,21 @@ $fullText
             itemBuilder: (context, index) {
               final item = results[index] as Map<String, dynamic>;
               final konu = item['konu'] ?? 'Konu bulunamadı';
-              final sayfa = item['sayfa'] ?? 'Sayfa yok';
+              final sayfa = item['sayfa'] ?? '0';
+
+              // Bitiş sayfasını hesapla ve önizlemede göster
+              String endPageText;
+              if (index < results.length - 1) {
+                final nextItem = results[index + 1] as Map<String, dynamic>;
+                final nextStartPage = int.tryParse(nextItem['sayfa']?.toString() ?? '0') ?? 0;
+                endPageText = (nextStartPage - 1).toString();
+              } else {
+                endPageText = '...';
+              }
+
               return ListTile(
                 title: Text(konu.toString()),
-                trailing: Text("Sayfa: ${sayfa.toString()}"),
+                trailing: Text("$sayfa - $endPageText"), // İSTEDİĞİN GİBİ
               );
             },
           ),
@@ -131,9 +143,8 @@ $fullText
             onPressed: () {
               Navigator.of(context).pop();
               Navigator.of(context).push(MaterialPageRoute(
-                // GÜNCELLENDİ: GiveBooksPage'e materyal türünü de gönderiyoruz
                 builder: (context) => GiveBooksPage(
-                  topics: results,
+                  topics: _rawParsedTopics, // GiveBooksPage'e ham veriyi gönderiyoruz
                   materialType: widget.materialType,
                 ),
               ));
@@ -158,7 +169,6 @@ $fullText
 
   @override
   Widget build(BuildContext context) {
-    // ... Bu fonksiyonun geri kalanı aynı
     return Scaffold(
       appBar: AppBar(
         title: Text('${widget.imageFiles.length} Sayfa Seçildi'),

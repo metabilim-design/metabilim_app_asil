@@ -41,7 +41,6 @@ class _BookListPageState extends State<BookListPage> {
     );
   }
 
-  // GÜNCELLENDİ: Hangi materyal türünün ekleneceğini parametre olarak alıyor
   Future<void> _pickImagesAndStartProcess(String materialType) async {
     final List<XFile> pickedFiles = await _picker.pickMultiImage();
     if (pickedFiles.isNotEmpty && mounted) {
@@ -49,7 +48,7 @@ class _BookListPageState extends State<BookListPage> {
       Navigator.push(context, MaterialPageRoute(
         builder: (context) => ConfirmUploadPage(
           imageFiles: imageFiles,
-          materialType: materialType, // Yeni parametreyi ConfirmUploadPage'e gönderiyoruz
+          materialType: materialType,
         ),
       ));
     }
@@ -94,7 +93,6 @@ class _BookListPageState extends State<BookListPage> {
           );
         },
       ),
-      // GÜNCELLENDİ: SpeedDial'a "Fasikül Ekle" seçeneği eklendi
       floatingActionButton: SpeedDial(
         icon: Icons.add,
         activeIcon: Icons.close,
@@ -112,7 +110,7 @@ class _BookListPageState extends State<BookListPage> {
           ),
           SpeedDialChild(
             child: const Icon(Icons.auto_stories_outlined),
-            label: 'Fasikül Ekle', // YENİ
+            label: 'Fasikül Ekle',
             labelStyle: GoogleFonts.poppins(),
             onTap: () => _pickImagesAndStartProcess('Fasikül'),
           ),
@@ -137,7 +135,7 @@ class _BookListPageState extends State<BookListPage> {
         leading: const Icon(Icons.menu_book, color: Colors.blueGrey),
         contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
         title: Text('${book['subject']} - ${book['publisher']}', style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
-        subtitle: Text('Tür: ${book['bookType']}'), // Tür bilgisi gösteriliyor
+        subtitle: Text('Tür: ${book['bookType']}'),
         trailing: const Icon(Icons.arrow_forward_ios, size: 16),
         onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => EditBookPage(bookId: doc.id, bookData: book))),
       ),
@@ -145,7 +143,6 @@ class _BookListPageState extends State<BookListPage> {
   }
 
   Widget _buildPracticeTile(DocumentSnapshot doc) {
-    // ... Bu fonksiyon aynı kalıyor
     final practice = doc.data() as Map<String, dynamic>;
     return Card(
       elevation: 4,
