@@ -24,6 +24,7 @@ class _AssignLessonEtudsPageState extends State<AssignLessonEtudsPage> with Tick
   int _totalEtuds = 0;
   int _digitalEtuds = 0;
   bool _isLoading = true;
+  String? _errorMessage;
 
   final Map<String, int> _tytLessonEtuds = {};
   final Map<String, int> _aytLessonEtuds = {};
@@ -41,7 +42,7 @@ class _AssignLessonEtudsPageState extends State<AssignLessonEtudsPage> with Tick
   void _initializePage() {
     for (var lesson in tytLessons) { _tytLessonEtuds[lesson] = 0; }
     for (var lesson in aytLessons) { _aytLessonEtuds[lesson] = 0; }
-    _calculateTotalEtuds();
+    _calculateEtudsFromStudentSchedule();
   }
 
   int get _assignedEtuds {
@@ -51,39 +52,62 @@ class _AssignLessonEtudsPageState extends State<AssignLessonEtudsPage> with Tick
     return total;
   }
 
-  Future<void> _calculateTotalEtuds() async {
-    setState(() => _isLoading = true);
+  Future<void> _calculateEtudsFromStudentSchedule() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
     try {
       final firestore = FirebaseFirestore.instance;
-      final scheduleDoc = await firestore.collection('settings').doc('schedule_times').get();
-      final digitalDoc = await firestore.collection('settings').doc('digital_schedule').get();
-      final scheduleData = scheduleDoc.exists ? scheduleDoc.data() as Map<String, dynamic> : <String, dynamic>{};
-      final digitalData = digitalDoc.exists ? digitalDoc.data() as Map<String, dynamic> : <String, dynamic>{};
+
+      if (widget.student.classId == null || widget.student.classId!.isEmpty) {
+        throw Exception('Bu öğrenci herhangi bir sınıfa atanmamış. Lütfen önce sınıf ataması yapın.');
+      }
+
+      final classDoc = await firestore.collection('classes').doc(widget.student.classId).get();
+      if (!classDoc.exists) {
+        throw Exception('Öğrencinin atandığı sınıf (${widget.student.classId}) sistemde bulunamadı.');
+      }
+
+      final activeTimetableId = classDoc.data()?['activeTimetableId'] as String?;
+      if (activeTimetableId == null || activeTimetableId.isEmpty) {
+        throw Exception('Bu sınıfa henüz bir etüt programı şablonu atanmamış.');
+      }
+
+      final templateDoc = await firestore.collection('schedule_templates').doc(activeTimetableId).get();
+      if (!templateDoc.exists) {
+        throw Exception('Sınıfa atanan program şablonu bulunamadı. Silinmiş olabilir.');
+      }
+
+      final timetable = templateDoc.data()?['timetable'] as Map<String, dynamic>? ?? {};
+
       int calculatedTotal = 0;
-      int calculatedDigital = 0;
       for (var day = widget.startDate; day.isBefore(widget.endDate.add(const Duration(days: 1))); day = day.add(const Duration(days: 1))) {
-        String dayName = _getDayNameInTurkish(day.weekday);
-        if (scheduleData.containsKey(dayName) && scheduleData[dayName] is List) {
-          calculatedTotal += (scheduleData[dayName] as List).length;
-        }
-        if (digitalData.containsKey(dayName) && digitalData[dayName] is List) {
-          calculatedDigital += (digitalData[dayName] as List).length;
+        String dayName = _getDayNameInTurkish(day.weekday); // Örn: "Pazartesi"
+
+        // ### HATA BURADAYDI VE DÜZELTİLDİ! ###
+        // '.toLowerCase()' kaldırıldı. Artık "Pazartesi" anahtarını arayacak.
+        if (timetable.containsKey(dayName)) {
+          calculatedTotal += (timetable[dayName] as List).length;
         }
       }
-      if(mounted) {
+
+      if (mounted) {
         setState(() {
           _totalEtuds = calculatedTotal;
-          _digitalEtuds = calculatedDigital;
-          _isLoading = false;
+          _digitalEtuds = 0;
         });
       }
+
     } catch (e) {
       if (mounted) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Hata: Etüt saatleri alınamadı. $e')),
-        );
+        setState(() {
+          _errorMessage = e.toString().replaceFirst("Exception: ", "");
+        });
       }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -103,18 +127,29 @@ class _AssignLessonEtudsPageState extends State<AssignLessonEtudsPage> with Tick
   @override
   Widget build(BuildContext context) {
     int remainingEtuds = _totalEtuds - _assignedEtuds;
-    bool canProceed = _assignedEtuds > 0;
+    bool canProceed = _assignedEtuds > 0 && _errorMessage == null;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Derslere Etüt Ata'),
-        bottom: TabBar(
+        bottom: _errorMessage != null ? null : TabBar(
           controller: _tabController,
           tabs: const [ Tab(text: 'TYT'), Tab(text: 'AYT'), ],
         ),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
+          : _errorMessage != null
+          ? Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Text(
+            _errorMessage!,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 16, color: Colors.red),
+          ),
+        ),
+      )
           : Column(
         children: [
           Padding(
@@ -131,7 +166,7 @@ class _AssignLessonEtudsPageState extends State<AssignLessonEtudsPage> with Tick
                 children: [
                   Text('Kalan / Toplam Etüt', style: TextStyle(fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onPrimaryContainer)),
                   Text(
-                    '$remainingEtuds / $_totalEtuds  (+ $_digitalEtuds Dijital)',
+                    '$remainingEtuds / $_totalEtuds',
                     style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Theme.of(context).colorScheme.primary),
                   ),
                 ],
@@ -153,7 +188,6 @@ class _AssignLessonEtudsPageState extends State<AssignLessonEtudsPage> with Tick
         padding: const EdgeInsets.all(16.0),
         child: ElevatedButton(
           onPressed: !canProceed ? null : () {
-            // DÜZELTME: Haritaların tipi (Map<String, int>) açıkça belirtildi.
             final Map<String, int> assignedTytLessons = Map.from(_tytLessonEtuds)..removeWhere((key, value) => value == 0);
             final Map<String, int> assignedAytLessons = Map.from(_aytLessonEtuds)..removeWhere((key, value) => value == 0);
 
@@ -169,9 +203,7 @@ class _AssignLessonEtudsPageState extends State<AssignLessonEtudsPage> with Tick
           },
           style: ElevatedButton.styleFrom(
             padding: const EdgeInsets.symmetric(vertical: 16),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
           child: const Text('Programı Oluştur ve Önizle', style: TextStyle(fontSize: 16)),
         ),

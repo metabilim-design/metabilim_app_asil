@@ -1,12 +1,10 @@
-// ... (dosyanın üst kısmı ve kodun çoğu aynı, sadece en alttaki butonu güncelliyoruz)
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:metabilim/models/user_model.dart';
-import 'package:metabilim/pages/coach/homework_flow/select_materials_page.dart'; // YENİ: Bu satırı ekle
+import 'package:metabilim/pages/coach/homework_flow/select_materials_page.dart';
 
-// EtudSlot class tanımı aynı kalıyor...
 class EtudSlot {
   final DateTime dateTime;
   String? lessonName;
@@ -17,7 +15,6 @@ class EtudSlot {
 }
 
 class PreviewSchedulePage extends StatefulWidget {
-  // ... (widget'ın değişkenleri aynı kalıyor)
   final AppUser student;
   final DateTime startDate;
   final DateTime endDate;
@@ -31,7 +28,6 @@ class PreviewSchedulePage extends StatefulWidget {
 }
 
 class _PreviewSchedulePageState extends State<PreviewSchedulePage> {
-  // ... (state değişkenleri ve fonksiyonların hepsi aynı kalıyor)
   bool _isLoading = true;
   String? _infoMessage;
   Map<DateTime, List<EtudSlot>> _schedule = {};
@@ -41,24 +37,55 @@ class _PreviewSchedulePageState extends State<PreviewSchedulePage> {
 
   @override
   void initState() { super.initState(); _generateSchedule(); }
-  Future<void> _generateSchedule() async { /* ... (fonksiyonun içi tamamen aynı) */
+
+  Future<void> _generateSchedule() async {
     setState(() { _isLoading = true; _infoMessage = null; });
     try {
-      List<EtudSlot> allSlots = [];
       final firestore = FirebaseFirestore.instance;
-      final scheduleDoc = await firestore.collection('settings').doc('schedule_times').get();
-      final digitalDoc = await firestore.collection('settings').doc('digital_schedule').get();
-      final scheduleData = scheduleDoc.exists ? scheduleDoc.data() as Map<String, dynamic> : <String, dynamic>{};
-      final digitalData = digitalDoc.exists ? digitalDoc.data() as Map<String, dynamic> : <String, dynamic>{};
+      List<EtudSlot> allSlots = [];
+
+      if (widget.student.classId == null || widget.student.classId!.isEmpty) {
+        throw Exception('Bu öğrenci herhangi bir sınıfa atanmamış.');
+      }
+      final classDoc = await firestore.collection('classes').doc(widget.student.classId).get();
+      if (!classDoc.exists) throw Exception('Öğrencinin sınıfı bulunamadı.');
+
+      final activeTimetableId = classDoc.data()?['activeTimetableId'] as String?;
+      if (activeTimetableId == null || activeTimetableId.isEmpty) {
+        throw Exception('Bu sınıfa bir etüt programı atanmamış.');
+      }
+
+      final templateDoc = await firestore.collection('schedule_templates').doc(activeTimetableId).get();
+      if (!templateDoc.exists) throw Exception('Atanan program şablonu bulunamadı.');
+
+      final timetable = templateDoc.data()?['timetable'] as Map<String, dynamic>? ?? {};
+
       for (var day = widget.startDate; day.isBefore(widget.endDate.add(const Duration(days: 1))); day = day.add(const Duration(days: 1))) {
         String dayName = _getDayNameInTurkish(day.weekday);
-        _addSlots(allSlots, scheduleData, day, dayName, isDigital: false);
-        _addSlots(allSlots, digitalData, day, dayName, isDigital: true);
+
+        // ### HATA BURADAYDI VE DÜZELTİLDİ! ###
+        // '.toLowerCase()' kaldırıldı. Artık "Pazartesi" anahtarını doğru şekilde bulacak.
+        final slotsForDay = timetable[dayName] as List<dynamic>? ?? [];
+
+        for (var timeEntry in slotsForDay) {
+          try {
+            String startTime = timeEntry.toString().split('-')[0].trim();
+            final parts = startTime.split(':');
+            if (parts.length == 2) {
+              allSlots.add(EtudSlot(
+                  dateTime: DateTime(day.year, day.month, day.day, int.parse(parts[0]), int.parse(parts[1])),
+                  isDigital: false
+              ));
+            }
+          } catch (e) { print('Hatalı zaman formatı atlanıyor: "$timeEntry"'); }
+        }
       }
+
       if (allSlots.isEmpty) {
-        if(mounted) setState(() { _infoMessage = 'Seçilen tarih aralığı için ayarlanmış herhangi bir etüt saati bulunamadı.'; _isLoading = false; });
+        if(mounted) setState(() { _infoMessage = 'Seçilen tarih aralığı için bu sınıfın programında etüt saati bulunamadı.'; _isLoading = false; });
         return;
       }
+
       allSlots.sort((a, b) => a.dateTime.compareTo(b.dateTime));
       List<List<String>> lessonsToPlace = [];
       widget.tytLessons.forEach((lesson, count) { for (int i = 0; i < count; i++) lessonsToPlace.add(['TYT', lesson]); });
@@ -72,37 +99,24 @@ class _PreviewSchedulePageState extends State<PreviewSchedulePage> {
           lessonIndex++;
         }
       }
+
       Map<DateTime, List<EtudSlot>> groupedSchedule = {};
       for (var slot in allSlots) {
         final dateOnly = DateTime(slot.dateTime.year, slot.dateTime.month, slot.dateTime.day);
         groupedSchedule.putIfAbsent(dateOnly, () => []).add(slot);
       }
+
       if(mounted) setState(() { _schedule = groupedSchedule; });
+
     } catch (e) {
       print('Program oluşturulurken kritik hata: $e');
-      if(mounted) _infoMessage = 'Program oluşturulamadı. Lütfen etüt saat ayarlarını kontrol edin.';
+      if(mounted) _infoMessage = 'Program oluşturulamadı: ${e.toString().replaceFirst("Exception: ", "")}';
     } finally {
       if(mounted) setState(() => _isLoading = false);
     }
   }
-  void _addSlots(List<EtudSlot> allSlots, Map<String, dynamic> data, DateTime day, String dayName, {required bool isDigital}) { /* ... (fonksiyonun içi tamamen aynı) */
-    if (data.containsKey(dayName) && data[dayName] is List) {
-      for (var timeEntry in (data[dayName] as List)) {
-        try {
-          String startTime = timeEntry.toString().split('-')[0].trim();
-          final parts = startTime.split(':');
-          if (parts.length == 2) {
-            allSlots.add(EtudSlot(
-                dateTime: DateTime(day.year, day.month, day.day, int.parse(parts[0]), int.parse(parts[1])),
-                isDigital: isDigital,
-                lessonName: isDigital ? 'Dijital Etüt' : null
-            ));
-          }
-        } catch (e) { print('Hatalı zaman formatı atlanıyor: "$timeEntry" - Hata: $e'); }
-      }
-    }
-  }
-  void _handleSwap(EtudSlot clickedSlot) { /* ... (fonksiyonun içi tamamen aynı) */
+
+  void _handleSwap(EtudSlot clickedSlot) {
     if (clickedSlot.isDigital || clickedSlot.lessonName == null) return;
     if (_selectedForSwap == null) {
       setState(() => _selectedForSwap = clickedSlot);
@@ -120,7 +134,8 @@ class _PreviewSchedulePageState extends State<PreviewSchedulePage> {
       setState(() => _selectedForSwap = null);
     }
   }
-  String _getDayNameInTurkish(int weekday) { /* ... (fonksiyonun içi tamamen aynı) */
+
+  String _getDayNameInTurkish(int weekday) {
     const days = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar'];
     return days[weekday - 1];
   }
@@ -133,7 +148,7 @@ class _PreviewSchedulePageState extends State<PreviewSchedulePage> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _infoMessage != null
-          ? Center(child: Padding(padding: const EdgeInsets.all(24.0), child: Text(_infoMessage!, textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurfaceVariant))))
+          ? Center(child: Padding(padding: const EdgeInsets.all(24.0), child: Text(_infoMessage!, textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.error))))
           : Column(
         children: [
           Padding(
@@ -183,14 +198,13 @@ class _PreviewSchedulePageState extends State<PreviewSchedulePage> {
       bottomNavigationBar: Padding(
         padding: const EdgeInsets.all(16.0),
         child: ElevatedButton(
-          // GÜNCELLEME: Butonun onPressed fonksiyonu güncellendi
           onPressed: (_isLoading || _infoMessage != null) ? null : () {
             Navigator.of(context).push(MaterialPageRoute(
               builder: (context) => SelectMaterialsPage(
                 student: widget.student,
                 startDate: widget.startDate,
                 endDate: widget.endDate,
-                schedule: _schedule, // Oluşturulan ve düzenlenen programı bir sonraki sayfaya gönder
+                schedule: _schedule,
               ),
             ));
           },

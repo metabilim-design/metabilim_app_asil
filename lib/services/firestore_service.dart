@@ -2,49 +2,73 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:metabilim/models/exam_result.dart';
-import 'package:metabilim/models/user_model.dart';
-
-// YENİ MODELLER İÇİN IMPORT (BİR SONRAKİ ADIMDA OLUŞTURACAĞIZ)
-// import 'package-metabilim/models/homework_model.dart';
+import 'package:metabilim/models/user_model.dart'; // Projendeki AppUser modelinin olduğu yolu varsayıyorum
 
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  // --- SINIFLARA PROGRAM ATAMA İÇİN YENİ FONKSİYONLAR ---
+  // --- ETÜT PROGRAMI ŞABLONLARI ---
+  // BU FONKSİYONLAR YENİ EKLENDİ
 
-  // Belirli bir sınıftaki tüm öğrencileri getiren fonksiyon
-  Future<List<AppUser>> getStudentsByClass(String classId) async {
+  /// Firestore'da yeni bir etüt programı şablonu oluşturur.
+  /// Başlangıçta sadece adı ve oluşturulma tarihi bulunur. Saatler daha sonra düzenlenir.
+  Future<void> createScheduleTemplate(String templateName) async {
     try {
-      final querySnapshot = await _db
-          .collection('users')
-          .where('role', isEqualTo: 'Ogrenci')
-          .where('classId', isEqualTo: classId)
-          .get();
-      return querySnapshot.docs.map((doc) => AppUser.fromMap(doc.data(), doc.id)).toList();
+      await _db.collection('schedule_templates').add({
+        'templateName': templateName,
+        'createdAt': FieldValue.serverTimestamp(), // Sıralama için oluşturulma zamanını ekliyoruz
+        'timetable': {}, // Başlangıçta boş bir timetable haritası
+      });
     } catch (e) {
-      debugPrint("Sınıftaki öğrenciler getirilirken hata: $e");
-      return [];
+      debugPrint("Etüt şablonu oluşturulurken hata: $e");
+      rethrow; // Hatayı UI katmanına tekrar fırlat
     }
   }
 
-  // Admin tarafından oluşturulan bir programı, bir sınıftaki tüm öğrencilere dağıtan fonksiyon
-  // TODO: Bu fonksiyonu bir sonraki adımlarda dolduracağız.
-  // Future<void> assignScheduleToClass(HomeworkSchedule schedule, String classId) async {
-  //   final students = await getStudentsByClass(classId);
-  //   final batch = _db.batch();
-
-  //   for (final student in students) {
-  //     // Her öğrenci için 'schedules' alt koleksiyonuna yeni bir döküman oluştur
-  //     final scheduleRef = _db.collection('users').doc(student.uid).collection('schedules').doc();
-  //     batch.set(scheduleRef, schedule.toMap());
-  //   }
-
-  //   await batch.commit();
-  //   debugPrint('${students.length} öğrenciye program başarıyla atandı.');
-  // }
+  /// Belirli bir sınıfın aktif etüt programını (şablon ID'sini) günceller.
+  Future<void> setActiveTimetableForClass(String classId, String templateId) async {
+    try {
+      // 'classes' koleksiyonundaki ilgili sınıf dökümanını bul ve güncelle.
+      await _db.collection('classes').doc(classId).update({
+        'activeTimetableId': templateId,
+      });
+    } catch (e) {
+      debugPrint("Sınıfın aktif programı ayarlanırken hata: $e");
+      rethrow;
+    }
+  }
 
 
-  // --- MEVCUT VE DOĞRU ÇALIŞAN FONKSİYONLAR (DOKUNMUYORUZ) ---
+  // --- YENİ FONKSİYONLAR: SINIFLARA ÖZEL ETÜT SAATLERİ İÇİN ---
+
+  /// Bir sınıfın haftalık etüt programını Firestore'a kaydeder veya günceller.
+  /// `timetable` Map'i şöyle bir yapıda olmalı: {'pazartesi': ['09:00-09:45', '10:00-10:45'], 'sali': [...] }
+  Future<void> saveClassTimetable(String classId, Map<String, dynamic> timetable) async {
+    try {
+      // 'class_timetables' adında yeni bir koleksiyon oluşturup, döküman ID'si olarak sınıfın ID'sini kullanarak kaydet.
+      // Bu, her sınıfın kendi program dökümanı olmasını sağlar.
+      await _db.collection('class_timetables').doc(classId).set(timetable);
+    } catch (e) {
+      debugPrint("Sınıf etüt programı kaydedilirken hata: $e");
+      rethrow;
+    }
+  }
+
+  /// Belirli bir sınıfın haftalık etüt programını Firestore'dan getirir.
+  Future<DocumentSnapshot?> getClassTimetable(String classId) async {
+    try {
+      final doc = await _db.collection('class_timetables').doc(classId).get();
+      if (doc.exists) {
+        return doc;
+      }
+      return null; // Eğer o sınıf için henüz bir program oluşturulmamışsa null döner.
+    } catch (e) {
+      debugPrint("Sınıf etüt programı getirilirken hata: $e");
+      return null;
+    }
+  }
+
+  // --- MEVCUT VE DOĞRU ÇALIŞAN FONKSİYONLAR (DOKUNULMADI) ---
 
   Future<List<AppUser>> getStudentsForCoach() async {
     try {
@@ -52,15 +76,20 @@ class FirestoreService {
       if (coachId == null) {
         throw Exception("Koç girişi yapılmamış veya UID bulunamadı.");
       }
+
+      // 'users' koleksiyonunda, 'coachUid' alanı mevcut koçun ID'sine eşit olan tüm öğrencileri bul.
       final querySnapshot = await _db
           .collection('users')
           .where('role', isEqualTo: 'Ogrenci')
           .where('coachUid', isEqualTo: coachId)
           .get();
+
       if (querySnapshot.docs.isEmpty) {
         debugPrint("Bu koça atanmış öğrenci bulunamadı.");
         return [];
       }
+
+      // Her bir dökümanı senin AppUser modeline çeviriyoruz
       return querySnapshot.docs.map((doc) => AppUser.fromMap(doc.data(), doc.id)).toList();
     } catch (e) {
       debugPrint("Koçun öğrencileri getirilirken hata: $e");
@@ -70,12 +99,14 @@ class FirestoreService {
 
   Future<String?> getUserIdByStudentNumber(String studentNumber) async {
     try {
+      // Senin modeline göre arama alanı 'number'
       final querySnapshot = await _db
           .collection('users')
           .where('number', isEqualTo: studentNumber.trim())
           .where('role', isEqualTo: 'Ogrenci')
           .limit(1)
           .get();
+
       if (querySnapshot.docs.isNotEmpty) {
         return querySnapshot.docs.first.id;
       }

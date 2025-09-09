@@ -1,19 +1,20 @@
-// lib/admin_shell.dart
-
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:metabilim/auth_service.dart';
 import 'package:metabilim/login_page.dart';
 import 'package:metabilim/pages/admin/user_management_page.dart';
-import 'package:metabilim/pages/admin/schedule_settings_page.dart';
 import 'package:metabilim/pages/admin/admin_dashboard_page.dart';
 import 'package:metabilim/pages/admin/class_management_page.dart';
 import 'package:metabilim/pages/admin/coach_management_page.dart';
 import 'package:metabilim/pages/admin/digital_lesson_settings_page.dart';
-// --- DEĞİŞİKLİK BURADA ---
-// Eski 'upload_exam_page.dart' importu kaldırıldı, yerine doğrusu eklendi.
 import 'package:metabilim/pages/admin/exam_analysis_page.dart';
-// --- BİTTİ ---
+
+// --- KULLANILACAK SAYFAYI IMPORT EDİYORUZ ---
+import 'package:metabilim/pages/admin/schedule_settings_page.dart';
+
+// --- YENİ SAYFAYI ŞİMDİLİK KULLANMIYORUZ ---
+// import 'package:metabilim/pages/admin/class_timetable_management_page.dart';
+
 
 class AdminShell extends StatefulWidget {
   const AdminShell({super.key});
@@ -25,15 +26,15 @@ class AdminShell extends StatefulWidget {
 class _AdminShellState extends State<AdminShell> {
   int _selectedIndex = 0;
 
-  // --- DEĞİŞİKLİK BURADA: Menüdeki sayfa listesi güncellendi ---
+  // --- Sayfa listesini isteğine göre düzenliyoruz ---
   static final List<Widget> _adminPages = <Widget>[
     const AdminDashboardPage(),
     const UserManagementPage(),
     const ClassManagementPage(),
     const CoachManagementPage(),
-    const ExamAnalysisPage(), // YENİ VE DOĞRU SAYFA BURADA
+    const ExamAnalysisPage(),
     const DigitalLessonSettingsPage(),
-    const ScheduleSettingsPage(),
+    const ScheduleSettingsPage(), // DEĞİŞİKLİK: İstediğin gibi bu sayfayı geri getirdik
   ];
 
   static const List<String> _pageTitles = <String>[
@@ -41,17 +42,16 @@ class _AdminShellState extends State<AdminShell> {
     'Kullanıcı Yönetimi',
     'Sınıf Yönetimi',
     'Eğitim Koçu Yönetimi',
-    'Sınav Sonucu Yükle', // Başlık aynı kalabilir
+    'Sınav Sonucu Yükle',
     'Dijital Ders Ayarları',
-    'Etüt Saat Ayarları',
+    'Etüt Şablon Ayarları', // Başlığı sayfanın içeriğiyle daha uyumlu hale getirdim
   ];
-  // ---------------------------------------------
 
   void _onItemTapped(int index) {
     setState(() {
       _selectedIndex = index;
     });
-    Navigator.pop(context);
+    Navigator.pop(context); // Drawer'ı kapat
   }
 
   @override
@@ -59,10 +59,6 @@ class _AdminShellState extends State<AdminShell> {
     return Scaffold(
       appBar: AppBar(
         title: Text(_pageTitles[_selectedIndex]),
-        backgroundColor: Theme.of(context).primaryColor,
-        titleTextStyle: GoogleFonts.poppins(
-            color: Colors.white, fontSize: 20, fontWeight: FontWeight.w600),
-        iconTheme: const IconThemeData(color: Colors.white),
       ),
       drawer: Drawer(
         child: ListView(
@@ -88,22 +84,19 @@ class _AdminShellState extends State<AdminShell> {
                 icon: Icons.school_outlined,
                 title: 'Eğitim Koçu Yönetimi',
                 index: 3),
-
-            // --- Menüdeki ilgili eleman ---
             _buildDrawerItem(
                 icon: Icons.upload_file_outlined,
                 title: 'Sınav Sonucu Yükle',
                 index: 4),
-            // -------------------------------
-
             _buildDrawerItem(
                 icon: Icons.computer_outlined,
                 title: 'Dijital Ders Ayarları',
                 index: 5),
             _buildDrawerItem(
                 icon: Icons.timer_outlined,
-                title: 'Etüt Saat Ayarları',
+                title: 'Etüt Şablon Ayarları', // Başlık güncellendi
                 index: 6),
+
             const Divider(),
             ListTile(
               leading: const Icon(Icons.logout),

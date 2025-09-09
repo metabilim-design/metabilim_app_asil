@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:flutter/services.dart';
 
 class EditScheduleTemplatePage extends StatefulWidget {
   final String templateId;
@@ -14,7 +13,8 @@ class EditScheduleTemplatePage extends StatefulWidget {
 
 class _EditScheduleTemplatePageState extends State<EditScheduleTemplatePage> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  Map<String, List<String>> _dailySlots = {};
+  // Değişken adını daha anlaşılır yaptım: _timetable
+  Map<String, List<String>> _timetable = {};
   bool _isLoading = true;
   bool _isSaving = false;
 
@@ -26,16 +26,40 @@ class _EditScheduleTemplatePageState extends State<EditScheduleTemplatePage> {
     _loadSchedule();
   }
 
+  // Fonksiyonu daha güvenli hale getirdim.
   Future<void> _loadSchedule() async {
     setState(() => _isLoading = true);
-    final doc = await _firestore.collection('schedule_templates').doc(widget.templateId).get();
-    if (doc.exists && doc.data() != null) {
-      final scheduleMap = doc.data()!['schedule'] as Map<String, dynamic>;
+    try {
+      final doc = await _firestore.collection('schedule_templates').doc(widget.templateId).get();
+
+      // Dökümanın varlığını ve verinin null olmadığını kontrol ediyoruz.
+      if (doc.exists && doc.data() != null) {
+        // HATA BURADAYDI: Alan adı 'schedule' değil, 'timetable' olmalıydı.
+        // Ayrıca ?? {} ekleyerek bu alan hiç yoksa bile programın çökmesini engelledim.
+        final timetableFromDB = doc.data()?['timetable'] as Map<String, dynamic>? ?? {};
+
+        setState(() {
+          // Gelen veriyi Map<String, List<String>> formatına güvenli bir şekilde çeviriyoruz.
+          _timetable = {
+            for (var day in _daysOfWeek)
+              day: List<String>.from(timetableFromDB[day] ?? [])
+          };
+        });
+      } else {
+        // Eğer döküman yoksa veya boşsa, tüm günleri boş listelerle başlat.
+        setState(() {
+          _timetable = { for (var day in _daysOfWeek) day: [] };
+        });
+      }
+    } catch (e) {
+      print("Program yüklenirken hata oluştu: $e");
+      // Hata durumunda da boş bir tablo göster.
       setState(() {
-        _dailySlots = { for (var day in _daysOfWeek) day: List<String>.from(scheduleMap[day] ?? []) };
+        _timetable = { for (var day in _daysOfWeek) day: [] };
       });
+    } finally {
+      setState(() => _isLoading = false);
     }
-    setState(() => _isLoading = false);
   }
 
   Future<void> _addSlot(String day) async {
@@ -74,8 +98,8 @@ class _EditScheduleTemplatePageState extends State<EditScheduleTemplatePage> {
                 if (formKey.currentState!.validate()) {
                   final newSlot = '${startController.text.trim()} - ${endController.text.trim()}';
                   setState(() {
-                    _dailySlots[day]!.add(newSlot);
-                    _dailySlots[day]!.sort();
+                    _timetable[day]!.add(newSlot);
+                    _timetable[day]!.sort(); // Saatleri ekledikten sonra sırala
                   });
                   Navigator.pop(context);
                 }
@@ -97,14 +121,15 @@ class _EditScheduleTemplatePageState extends State<EditScheduleTemplatePage> {
 
   void _removeSlot(String day, String slot) {
     setState(() {
-      _dailySlots[day]!.remove(slot);
+      _timetable[day]!.remove(slot);
     });
   }
 
   Future<void> _saveSchedule() async {
     setState(() => _isSaving = true);
     try {
-      await _firestore.collection('schedule_templates').doc(widget.templateId).update({'schedule': _dailySlots});
+      // DÜZELTME: Veriyi tutarlılık için yine 'timetable' alanına kaydediyoruz.
+      await _firestore.collection('schedule_templates').doc(widget.templateId).update({'timetable': _timetable});
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Program başarıyla güncellendi!'), backgroundColor: Colors.green),
@@ -131,7 +156,6 @@ class _EditScheduleTemplatePageState extends State<EditScheduleTemplatePage> {
           : ListView(
         padding: const EdgeInsets.all(16.0),
         children: [
-          // YENİ: Kaydetme uyarısı eklendi
           Container(
             padding: const EdgeInsets.all(12.0),
             margin: const EdgeInsets.only(bottom: 16.0),
@@ -167,7 +191,8 @@ class _EditScheduleTemplatePageState extends State<EditScheduleTemplatePage> {
   }
 
   Widget _buildDayCard(String day) {
-    final slots = _dailySlots[day]!;
+    // _timetable'ın null olma ihtimaline karşı koruma ekledim.
+    final slots = _timetable[day] ?? [];
     return Card(
       margin: const EdgeInsets.only(bottom: 16.0),
       child: ExpansionTile(
@@ -200,7 +225,7 @@ class _EditScheduleTemplatePageState extends State<EditScheduleTemplatePage> {
       case 'Perşembe': return Icons.looks_4_outlined;
       case 'Cuma': return Icons.looks_5_outlined;
       case 'Cumartesi': return Icons.looks_6_outlined;
-      case 'Pazar': return Icons.cake_outlined;
+      case 'Pazar': return Icons.cake_outlined; // Pazar günü tatil :)
       default: return Icons.calendar_today;
     }
   }

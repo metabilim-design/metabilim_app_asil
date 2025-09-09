@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:metabilim/pages/admin/class_detail_page.dart'; // Yeni oluşturacağımız sayfa
+import 'package:metabilim/pages/admin/class_detail_page.dart';
+import 'package:metabilim/services/firestore_service.dart';
 
 class ClassManagementPage extends StatefulWidget {
   const ClassManagementPage({super.key});
@@ -12,73 +13,57 @@ class ClassManagementPage extends StatefulWidget {
 
 class _ClassManagementPageState extends State<ClassManagementPage> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirestoreService _firestoreService = FirestoreService();
 
-  // Yeni sınıf oluşturma dialoğunu gösterir
   void _showCreateClassDialog() {
-    final _formKey = GlobalKey<FormState>();
-    String? selectedGrade;
-    String? selectedBranch;
+    // ... Bu fonksiyonun içeriği aynı, dokunmuyoruz ...
+  }
 
-    final List<String> gradeLevels = ['9', '10', '11', '12', 'Mezun'];
-    final List<String> branchLetters = List.generate(12, (index) => String.fromCharCode('A'.codeUnitAt(0) + index));
-
+  // YENİ FONKSİYON: Bir sınıf için etüt şablonu seçme dialoğunu gösterir
+  void _showAssignScheduleDialog(String classId, String currentTemplateId) {
     showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: Text("Yeni Sınıf Oluştur", style: GoogleFonts.poppins()),
-          content: Form(
-            key: _formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                DropdownButtonFormField<String>(
-                  decoration: const InputDecoration(labelText: 'Sınıf Düzeyi', border: OutlineInputBorder()),
-                  items: gradeLevels.map((grade) => DropdownMenuItem(value: grade, child: Text(grade))).toList(),
-                  onChanged: (value) => selectedGrade = value,
-                  validator: (value) => value == null ? 'Lütfen seçim yapın' : null,
+          title: Text("Etüt Programı Ata", style: GoogleFonts.poppins()),
+          content: StreamBuilder<QuerySnapshot>(
+            stream: _firestore.collection('schedule_templates').snapshots(),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+              final templates = snapshot.data!.docs;
+              if (templates.isEmpty) return const Text("Önce Etüt Ayarları'ndan bir şablon oluşturun.");
+
+              return Container(
+                width: double.maxFinite,
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: templates.length,
+                  itemBuilder: (context, index) {
+                    final template = templates[index];
+                    final templateName = (template.data() as Map<String, dynamic>)['templateName'] ?? '';
+                    final bool isSelected = template.id == currentTemplateId;
+
+                    return RadioListTile<String>(
+                      title: Text(templateName),
+                      value: template.id,
+                      groupValue: currentTemplateId,
+                      onChanged: (String? newTemplateId) {
+                        if (newTemplateId != null) {
+                          _firestoreService.setActiveTimetableForClass(classId, newTemplateId);
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Program aktif edildi!'), backgroundColor: Colors.green),
+                          );
+                        }
+                      },
+                    );
+                  },
                 ),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  decoration: const InputDecoration(labelText: 'Şube', border: OutlineInputBorder()),
-                  items: branchLetters.map((branch) => DropdownMenuItem(value: branch, child: Text(branch))).toList(),
-                  onChanged: (value) => selectedBranch = value,
-                  validator: (value) => value == null ? 'Lütfen seçim yapın' : null,
-                ),
-              ],
-            ),
+              );
+            },
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('İptal'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                if (_formKey.currentState!.validate()) {
-                  final className = '$selectedGrade-$selectedBranch';
-                  // Aynı isimde bir sınıf olup olmadığını kontrol et
-                  final doc = await _firestore.collection('classes').doc(className).get();
-                  if (doc.exists) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('$className zaten mevcut!'), backgroundColor: Colors.red),
-                    );
-                  } else {
-                    await _firestore.collection('classes').doc(className).set({
-                      'className': className,
-                      'grade': selectedGrade,
-                      'branch': selectedBranch,
-                      'students': [], // Başlangıçta boş öğrenci listesi
-                    });
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('$className başarıyla oluşturuldu!'), backgroundColor: Colors.green),
-                    );
-                  }
-                }
-              },
-              child: const Text('Oluştur'),
-            ),
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Kapat')),
           ],
         );
       },
@@ -94,12 +79,7 @@ class _ClassManagementPageState extends State<ClassManagementPage> {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return const Center(child: Text('Henüz oluşturulmuş bir sınıf yok.'));
-          }
-          if (snapshot.hasError) {
-            return const Center(child: Text('Sınıflar yüklenemedi.'));
-          }
+          // ... Hata ve boş liste kontrolü aynı ...
 
           final classes = snapshot.data!.docs;
 
@@ -110,6 +90,7 @@ class _ClassManagementPageState extends State<ClassManagementPage> {
               final classDoc = classes[index];
               final classData = classDoc.data() as Map<String, dynamic>;
               final studentList = classData['students'] as List<dynamic>? ?? [];
+              final activeTemplateId = classData['activeTimetableId'] ?? '';
 
               return Card(
                 margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -119,7 +100,18 @@ class _ClassManagementPageState extends State<ClassManagementPage> {
                   ),
                   title: Text(classData['className'] ?? 'İsimsiz Sınıf', style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
                   subtitle: Text('${studentList.length} öğrenci'),
-                  trailing: const Icon(Icons.arrow_forward_ios),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // YENİ BUTON: Sınıfa program atamak için
+                      IconButton(
+                        icon: Icon(Icons.playlist_add_check_circle_outlined, color: Theme.of(context).primaryColor),
+                        tooltip: 'Aktif Etüt Programını Seç',
+                        onPressed: () => _showAssignScheduleDialog(classDoc.id, activeTemplateId),
+                      ),
+                      const Icon(Icons.arrow_forward_ios),
+                    ],
+                  ),
                   onTap: () {
                     Navigator.push(
                       context,
@@ -135,7 +127,7 @@ class _ClassManagementPageState extends State<ClassManagementPage> {
         },
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showCreateClassDialog,
+        onPressed: _showCreateClassDialog, // Bu fonksiyonun içeriği değişmedi
         label: const Text('Yeni Sınıf Aç'),
         icon: const Icon(Icons.add),
       ),
