@@ -1,15 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:metabilim/pages/coach/coach_student_list_page.dart';
-import 'package:metabilim/pages/coach/exam_results_page.dart';
-// YENİ AKIŞ İÇİN GEREKLİ IMPORT
+import 'package:metabilim/pages/coach/coach_student_list_page.dart'; // YENİ VE DOĞRU SAYFA
 import 'package:metabilim/pages/coach/homework_flow/homework_start_page.dart';
 import 'package:metabilim/pages/mentor/book_list_page.dart';
 import 'package:metabilim/pages/mentor/profile_page.dart';
-
-// ESKİ SAYFA IMPORT'U ARTIK GEREKLİ DEĞİL
-// import 'package:metabilim/pages/coach/assign_homework_page.dart';
-
 
 class EgitimKocuShell extends StatefulWidget {
   const EgitimKocuShell({super.key});
@@ -21,13 +15,13 @@ class EgitimKocuShell extends StatefulWidget {
 class _EgitimKocuShellState extends State<EgitimKocuShell> {
   int _selectedIndex = 0;
 
-  // GÜNCELLENDİ: Alt barda gösterilecek sayfalar yeni akışa göre düzenlendi
-  // AssignHomeworkPage yerine HomeworkStartPage eklendi.
-  static const List<Widget> _pages = <Widget>[
-    CoachStudentListPage(),
-    HomeworkStartPage(), // DEĞİŞİKLİK BURADA
-    ExamResultsPage(),
-    BookListPage(),
+  // HATA DÜZELTİLDİ: 'const' yerine 'final' kullanılarak hata giderildi.
+  // Sayfa listesi doğru mantığa göre düzenlendi.
+  static final List<Widget> _pages = <Widget>[
+    const CoachStudentListPage(), // 0: Öğrenciler sekmesi
+    const HomeworkStartPage(),    // 1: Ödev Ver sekmesi
+    const CoachStudentListPage(), // 2: Deneme Sonuçları sekmesi de öğrenci listesini açar
+    const BookListPage(),         // 3: Materyaller sekmesi
   ];
 
   void _onItemTapped(int index) {

@@ -44,6 +44,7 @@ class StudentExamResult {
   final int overallRank;
   final int classRank;
   final List<LessonResult> lessonResults;
+  final String examType; // YENİ: Sınav türünü (TYT, AYT, BRANŞ) tutacak alan
 
   StudentExamResult({
     required this.examName,
@@ -57,6 +58,7 @@ class StudentExamResult {
     required this.overallRank,
     required this.classRank,
     required this.lessonResults,
+    required this.examType, // YENİ
   });
 
   factory StudentExamResult.fromJson(Map<String, dynamic> json) {
@@ -75,6 +77,7 @@ class StudentExamResult {
       overallRank: (json['overallRank'] as num?)?.toInt() ?? 0,
       classRank: (json['classRank'] as num?)?.toInt() ?? 0,
       lessonResults: lessonList,
+      examType: json['examType'] ?? 'BRANŞ', // YENİ: Veritabanında yoksa varsayılan olarak BRANŞ ata
     );
   }
 
@@ -91,6 +94,7 @@ class StudentExamResult {
       'overallRank': overallRank,
       'classRank': classRank,
       'lessonResults': lessonResults.map((e) => e.toJson()).toList(),
+      'examType': examType, // YENİ
     };
   }
 }
