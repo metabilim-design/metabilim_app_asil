@@ -1,69 +1,88 @@
+// lib/pages/mentor/student_list_page.dart - GÜNCELLENMİŞ VE HATALARI DÜZELTİLMİŞ TAM KOD
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:metabilim/pages/mentor/students_by_class_page.dart'; // Bir sonraki adımda oluşturacağımız sayfa
+import 'package:metabilim/models/user_model.dart';
+import 'package:metabilim/pages/mentor/student_detail_page.dart';
+import 'package:metabilim/pages/mentor/check_homework_page.dart';
 
-class StudentListPage extends StatefulWidget {
-  const StudentListPage({super.key});
+class StudentListPage extends StatelessWidget {
+  final String classId;
+  final String purpose;
 
-  @override
-  State<StudentListPage> createState() => _StudentListPageState();
-}
-
-class _StudentListPageState extends State<StudentListPage> {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  const StudentListPage({super.key, required this.classId, required this.purpose});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Sınıflar', style: GoogleFonts.poppins()),
-        automaticallyImplyLeading: false, // Geri tuşunu kaldır
+        title: Text(
+          purpose == 'homeworkCheck' ? 'Öğrenci Seç' : 'Öğrenciler',
+          style: GoogleFonts.poppins(),
+        ),
       ),
       body: StreamBuilder<QuerySnapshot>(
-        // Veritabanındaki 'classes' koleksiyonundan tüm sınıfları çek
-        stream: _firestore.collection('classes').orderBy('className').snapshots(),
+        stream: FirebaseFirestore.instance
+            .collection('users')
+        // --- HATA 1 BURADAYDI, DÜZELTİLDİ ---
+        // 'classId' yerine veritabanındaki doğru alan adı olan 'class' kullanıldı.
+            .where('class', isEqualTo: classId)
+        // --- HATA 2 BURADAYDI, DÜZELTİLDİ ---
+        // 'student' yerine veritabanındaki doğru değer olan 'Ogrenci' kullanıldı.
+            .where('role', isEqualTo: 'Ogrenci')
+            .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
-            return Center(child: Text('Sınıflar yüklenirken bir hata oluştu: ${snapshot.error}'));
+            return Center(child: Text('Bir hata oluştu: ${snapshot.error}'));
           }
           if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return const Center(child: Text('Sisteme kayıtlı sınıf bulunamadı.'));
+            return const Center(
+              child: Padding(
+                padding: EdgeInsets.all(16.0),
+                child: Text(
+                  'Bu sınıfta öğrenci bulunamadı.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 16),
+                ),
+              ),
+            );
           }
 
-          final classes = snapshot.data!.docs;
+          var studentDocs = snapshot.data!.docs;
 
           return ListView.builder(
-            padding: const EdgeInsets.all(8.0),
-            itemCount: classes.length,
+            itemCount: studentDocs.length,
             itemBuilder: (context, index) {
-              final classDoc = classes[index];
-              final className = classDoc['className'] ?? 'İsimsiz Sınıf';
-              final classId = classDoc.id;
+              var studentData = studentDocs[index].data() as Map<String, dynamic>;
+              var student = AppUser.fromMap(studentData, studentDocs[index].id);
 
               return Card(
-                elevation: 3,
-                margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: ListTile(
-                  contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                  leading: const Icon(Icons.class_, color: Colors.blueGrey, size: 32),
-                  title: Text(className, style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600)),
-                  trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                  leading: CircleAvatar(
+                    child: Text(student.name.isNotEmpty ? student.name[0] : '?'),
+                  ),
+                  title: Text('${student.name} ${student.surname}', style: GoogleFonts.poppins()),
                   onTap: () {
-                    // Tıklanan sınıfın ID'si ve adıyla yeni sayfaya git
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => StudentsByClassPage(
-                          classId: classId,
-                          className: className,
+                    if (purpose == 'homeworkCheck') {
+                      Navigator.push(context, MaterialPageRoute(
+                        builder: (context) => CheckHomeworkPage(
+                          studentId: student.uid,
+                          studentName: '${student.name} ${student.surname}',
                         ),
-                      ),
-                    );
+                      ));
+                    } else {
+                      Navigator.push(context, MaterialPageRoute(
+                        builder: (context) => StudentDetailPage(
+                          studentId: student.uid,
+                          studentName: '${student.name} ${student.surname}',
+                        ),
+                      ));
+                    }
                   },
                 ),
               );

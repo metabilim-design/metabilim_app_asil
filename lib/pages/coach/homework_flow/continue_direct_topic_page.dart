@@ -1,4 +1,4 @@
-// lib/pages/coach/homework_flow/select_topic_page.dart
+// lib/pages/coach/homework_flow/continue_direct_topic_page.dart
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -6,119 +6,103 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:metabilim/models/user_model.dart';
 import 'package:metabilim/pages/coach/homework_flow/preview_schedule_page.dart';
 import 'package:metabilim/pages/coach/homework_flow/finalize_schedule_page.dart';
+import 'package:metabilim/pages/coach/homework_flow/select_topic_page.dart';
 
-// ----- GÜNCELLENMİŞ MODELLER (TÜM AKIŞ BUNU KULLANACAK) -----
-class Topic {
-  final String konu;
-  final int startPage;
-  final int endPage;
-  bool isSelected;
-  final String bookPublisher;
-  final String bookId;
-
-  Topic({
-    required this.konu,
-    required this.startPage,
-    required this.endPage,
-    this.isSelected = false,
-    required this.bookPublisher,
-    required this.bookId,
-  });
-
-  int get pageCount => endPage - startPage > 0 ? endPage - startPage : 0;
-
-  factory Topic.fromMap(Map<String, dynamic> map, String publisher, String id) {
-    return Topic(
-      konu: map['konu'] ?? 'İsimsiz Konu',
-      startPage: map['start_page'] ?? 0,
-      endPage: map['end_page'] ?? 0,
-      bookPublisher: publisher,
-      bookId: id,
-    );
-  }
-}
-
-class Book {
-  final String id;
-  final String name;
-  final String lesson;
-  final int difficulty;
-  final List<Topic> topics;
-
-  Book({
-    required this.id,
-    required this.name,
-    required this.lesson,
-    required this.difficulty,
-    required this.topics,
-  });
-}
-
-// ----- ANA SAYFA WIDGET'I -----
-class SelectTopicPage extends StatefulWidget {
+class ContinueDirectTopicPage extends StatefulWidget {
   final AppUser student;
   final DateTime startDate;
   final DateTime endDate;
-  final Map<String, int> lessonEtuds;
-  final List<String> selectedMaterials;
-  final int effortRating;
   final Map<DateTime, List<EtudSlot>> schedule;
+  final DocumentSnapshot previousScheduleDoc;
 
-  const SelectTopicPage({
+  const ContinueDirectTopicPage({
     Key? key,
     required this.student,
     required this.startDate,
     required this.endDate,
-    required this.lessonEtuds,
-    required this.selectedMaterials,
-    required this.effortRating,
     required this.schedule,
+    required this.previousScheduleDoc,
   }) : super(key: key);
 
   @override
-  _SelectTopicPageState createState() => _SelectTopicPageState();
+  _ContinueDirectTopicPageState createState() => _ContinueDirectTopicPageState();
 }
 
-class _SelectTopicPageState extends State<SelectTopicPage> {
+class _ContinueDirectTopicPageState extends State<ContinueDirectTopicPage> {
   bool _isLoading = true;
+  String? _errorMessage;
   final Map<String, int> _totalPageQuotas = {};
   final Map<String, int> _solvedPageQuotas = {};
   final Map<String, List<Book>> _booksByLesson = {};
 
+  late final Map<String, int> _lessonEtuds;
+  late final List<String> _selectedMaterials;
+  late final int _effortRating;
+
   @override
   void initState() {
     super.initState();
-    _initializePageData();
+    _initializeAndFetchData();
   }
 
-  Future<void> _initializePageData() async {
+  Future<void> _initializeAndFetchData() async {
+    final previousData = widget.previousScheduleDoc.data() as Map<String, dynamic>;
+    _selectedMaterials = List<String>.from(previousData['materials'] ?? []);
+    _effortRating = previousData['effortRating'] ?? 3;
+
+    if (_selectedMaterials.isEmpty) {
+      setState(() {
+        _errorMessage = 'Devam etmek için seçilen önceki programda kayıtlı materyal bulunamadı. Lütfen bir önceki ekrana geri dönüp "Materyalleri Değiştir" seçeneği ile ilerleyin.';
+        _isLoading = false;
+      });
+      return;
+    }
+
+    _lessonEtuds = {};
+    widget.schedule.values.forEach((slots) {
+      for (var slot in slots) {
+        if (slot.lessonName != null && !slot.isDigital && slot.lessonName != 'Boş Etüt') {
+          _lessonEtuds.update(slot.fullLessonName, (value) => value + 1, ifAbsent: () => 1);
+        }
+      }
+    });
+
     await _fetchBooksAndCalculateQuotas();
     if (mounted) setState(() => _isLoading = false);
   }
 
   Future<void> _fetchBooksAndCalculateQuotas() async {
-    if (widget.selectedMaterials.isEmpty) return;
+    if (_selectedMaterials.isEmpty) {
+      if (mounted) setState(() => _isLoading = false);
+      return;
+    }
 
-    final booksSnapshot = await FirebaseFirestore.instance.collection('books').where(FieldPath.documentId, whereIn: widget.selectedMaterials).get();
+    final booksSnapshot = await FirebaseFirestore.instance.collection('books').where(FieldPath.documentId, whereIn: _selectedMaterials).get();
     final List<Book> allBooks = [];
     for (var doc in booksSnapshot.docs) {
-      final data = doc.data();
-      final bookPublisher = data['publisher'] ?? 'Bilinmeyen Yayınevi';
-      allBooks.add(Book(
-        id: doc.id,
-        name: data['bookType'] ?? 'İsimsiz Kitap',
-        lesson: '${data['level']} ${data['subject']}',
-        difficulty: data['difficulty'] ?? 3,
-        topics: List<Map<String, dynamic>>.from(data['topics'] ?? []).map((topicMap) => Topic.fromMap(topicMap, bookPublisher, doc.id)).toList(),
-      ));
+      try {
+        final data = doc.data();
+        final bookPublisher = data['publisher'] ?? 'Bilinmeyen Yayınevi';
+        List<dynamic> topicsRaw = data['topics'] is List ? data['topics'] : [];
+
+        allBooks.add(Book(
+          id: doc.id,
+          name: data['bookType'] ?? 'İsimsiz Kitap',
+          lesson: '${data['level']} ${data['subject']}',
+          difficulty: data['difficulty'] ?? 3,
+          topics: List<Map<String, dynamic>>.from(topicsRaw).map((topicMap) => Topic.fromMap(topicMap, bookPublisher, doc.id)).toList(),
+        ));
+      } catch (e) {
+        print('HATA: ${doc.id} IDli kitap işlenirken bir sorun oluştu: $e');
+      }
     }
 
     for (var book in allBooks) {
       _booksByLesson.putIfAbsent(book.lesson, () => []).add(book);
     }
 
-    for (String lessonName in widget.lessonEtuds.keys) {
-      final etudCount = widget.lessonEtuds[lessonName]!;
+    for (String lessonName in _lessonEtuds.keys) {
+      final etudCount = _lessonEtuds[lessonName]!;
       final booksForLesson = _booksByLesson[lessonName] ?? [];
       if (booksForLesson.isEmpty) {
         _totalPageQuotas[lessonName] = 0;
@@ -126,7 +110,7 @@ class _SelectTopicPageState extends State<SelectTopicPage> {
         continue;
       }
       final avgDifficulty = booksForLesson.map((b) => b.difficulty).reduce((a, b) => a + b) / booksForLesson.length;
-      final quota = _calculatePageQuota(etudCount, lessonName, avgDifficulty, widget.effortRating);
+      final quota = _calculatePageQuota(etudCount, lessonName, avgDifficulty, _effortRating);
       _totalPageQuotas[lessonName] = quota;
       _solvedPageQuotas[lessonName] = 0;
     }
@@ -175,9 +159,9 @@ class _SelectTopicPageState extends State<SelectTopicPage> {
       endDate: widget.endDate,
       initialSchedule: widget.schedule,
       selectedTopics: allSelectedTopics,
-      allSelectedMaterialIds: widget.selectedMaterials,
-      lessonEtuds: widget.lessonEtuds,
-      effortRating: widget.effortRating,
+      allSelectedMaterialIds: _selectedMaterials,
+      lessonEtuds: _lessonEtuds,
+      effortRating: _effortRating,
     )));
   }
 
@@ -191,6 +175,28 @@ class _SelectTopicPageState extends State<SelectTopicPage> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
+          : _errorMessage != null
+          ? Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Text(
+            _errorMessage!,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 16, color: Colors.red),
+          ),
+        ),
+      )
+          : _booksByLesson.isEmpty
+          ? const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24.0),
+          child: Text(
+            'Seçilen materyaller arasında konu içeren bir kitap bulunamadı. Lütfen materyal seçiminizi değiştirin.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 16),
+          ),
+        ),
+      )
           : ListView.builder(
         padding: const EdgeInsets.all(8.0),
         itemCount: lessonKeys.length,
@@ -202,7 +208,7 @@ class _SelectTopicPageState extends State<SelectTopicPage> {
       bottomNavigationBar: Padding(
         padding: const EdgeInsets.all(16.0),
         child: ElevatedButton(
-          onPressed: _isLoading ? null : _finalizeAndProceed,
+          onPressed: _isLoading || _errorMessage != null ? null : _finalizeAndProceed,
           style: ElevatedButton.styleFrom(
             padding: const EdgeInsets.symmetric(vertical: 16),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),

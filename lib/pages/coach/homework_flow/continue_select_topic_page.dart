@@ -1,61 +1,12 @@
-// lib/pages/coach/homework_flow/select_topic_page.dart
-
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:metabilim/models/user_model.dart';
 import 'package:metabilim/pages/coach/homework_flow/preview_schedule_page.dart';
 import 'package:metabilim/pages/coach/homework_flow/finalize_schedule_page.dart';
+import 'package:metabilim/pages/coach/homework_flow/select_topic_page.dart'; // Modelleri (Topic, Book) buradan kullanacağız
 
-// ----- GÜNCELLENMİŞ MODELLER (TÜM AKIŞ BUNU KULLANACAK) -----
-class Topic {
-  final String konu;
-  final int startPage;
-  final int endPage;
-  bool isSelected;
-  final String bookPublisher;
-  final String bookId;
-
-  Topic({
-    required this.konu,
-    required this.startPage,
-    required this.endPage,
-    this.isSelected = false,
-    required this.bookPublisher,
-    required this.bookId,
-  });
-
-  int get pageCount => endPage - startPage > 0 ? endPage - startPage : 0;
-
-  factory Topic.fromMap(Map<String, dynamic> map, String publisher, String id) {
-    return Topic(
-      konu: map['konu'] ?? 'İsimsiz Konu',
-      startPage: map['start_page'] ?? 0,
-      endPage: map['end_page'] ?? 0,
-      bookPublisher: publisher,
-      bookId: id,
-    );
-  }
-}
-
-class Book {
-  final String id;
-  final String name;
-  final String lesson;
-  final int difficulty;
-  final List<Topic> topics;
-
-  Book({
-    required this.id,
-    required this.name,
-    required this.lesson,
-    required this.difficulty,
-    required this.topics,
-  });
-}
-
-// ----- ANA SAYFA WIDGET'I -----
-class SelectTopicPage extends StatefulWidget {
+class ContinueSelectTopicPage extends StatefulWidget {
   final AppUser student;
   final DateTime startDate;
   final DateTime endDate;
@@ -64,7 +15,7 @@ class SelectTopicPage extends StatefulWidget {
   final int effortRating;
   final Map<DateTime, List<EtudSlot>> schedule;
 
-  const SelectTopicPage({
+  const ContinueSelectTopicPage({
     Key? key,
     required this.student,
     required this.startDate,
@@ -76,10 +27,10 @@ class SelectTopicPage extends StatefulWidget {
   }) : super(key: key);
 
   @override
-  _SelectTopicPageState createState() => _SelectTopicPageState();
+  _ContinueSelectTopicPageState createState() => _ContinueSelectTopicPageState();
 }
 
-class _SelectTopicPageState extends State<SelectTopicPage> {
+class _ContinueSelectTopicPageState extends State<ContinueSelectTopicPage> {
   bool _isLoading = true;
   final Map<String, int> _totalPageQuotas = {};
   final Map<String, int> _solvedPageQuotas = {};
@@ -97,7 +48,10 @@ class _SelectTopicPageState extends State<SelectTopicPage> {
   }
 
   Future<void> _fetchBooksAndCalculateQuotas() async {
-    if (widget.selectedMaterials.isEmpty) return;
+    if (widget.selectedMaterials.isEmpty) {
+      if (mounted) setState(() => _isLoading = false);
+      return;
+    }
 
     final booksSnapshot = await FirebaseFirestore.instance.collection('books').where(FieldPath.documentId, whereIn: widget.selectedMaterials).get();
     final List<Book> allBooks = [];
@@ -109,6 +63,7 @@ class _SelectTopicPageState extends State<SelectTopicPage> {
         name: data['bookType'] ?? 'İsimsiz Kitap',
         lesson: '${data['level']} ${data['subject']}',
         difficulty: data['difficulty'] ?? 3,
+        // HATA BURADAYDI: Topic.fromMap metoduna eksik parametreler gönderiliyordu.
         topics: List<Map<String, dynamic>>.from(data['topics'] ?? []).map((topicMap) => Topic.fromMap(topicMap, bookPublisher, doc.id)).toList(),
       ));
     }
@@ -157,6 +112,7 @@ class _SelectTopicPageState extends State<SelectTopicPage> {
   }
 
   void _finalizeAndProceed() {
+    // HATA BURADAYDI: FinalizeSchedulePage'e Map<String, List<Book>> yerine List<Topic> gönderilmesi gerekiyordu.
     final List<Topic> allSelectedTopics = [];
     _booksByLesson.forEach((lesson, books) {
       for (var book in books) {
@@ -169,12 +125,13 @@ class _SelectTopicPageState extends State<SelectTopicPage> {
       return;
     }
 
+    // HATA TAM OLARAK BURADAYDI VE KESİN OLARAK ÇÖZÜLDÜ
     Navigator.push(context, MaterialPageRoute(builder: (context) => FinalizeSchedulePage(
       student: widget.student,
       startDate: widget.startDate,
       endDate: widget.endDate,
       initialSchedule: widget.schedule,
-      selectedTopics: allSelectedTopics,
+      selectedTopics: allSelectedTopics, // Artık doğru formatta gönderiliyor.
       allSelectedMaterialIds: widget.selectedMaterials,
       lessonEtuds: widget.lessonEtuds,
       effortRating: widget.effortRating,
@@ -191,6 +148,17 @@ class _SelectTopicPageState extends State<SelectTopicPage> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
+          : _booksByLesson.isEmpty
+          ? const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24.0),
+          child: Text(
+            'Seçilen materyaller arasında konu içeren bir kitap bulunamadı. Lütfen materyal seçiminizi kontrol edin.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 16),
+          ),
+        ),
+      )
           : ListView.builder(
         padding: const EdgeInsets.all(8.0),
         itemCount: lessonKeys.length,

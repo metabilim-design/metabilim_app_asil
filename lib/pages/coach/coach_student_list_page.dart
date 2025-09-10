@@ -1,8 +1,11 @@
+// lib/pages/coach/coach_student_list_page.dart - GÜNCELLENMİŞ TAM KOD
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:metabilim/models/user_model.dart';
 import 'package:metabilim/services/firestore_service.dart';
-import 'package:metabilim/pages/coach/coach_student_exam_list_page.dart';
+// ESKİ: import 'package:metabilim/pages/coach/coach_student_exam_list_page.dart';
+import 'package:metabilim/pages/coach/coach_student_detail_page.dart'; // YENİ: Yeni detay sayfasını import et
 
 class CoachStudentListPage extends StatefulWidget {
   const CoachStudentListPage({super.key});
@@ -52,10 +55,12 @@ class _CoachStudentListPageState extends State<CoachStudentListPage> {
                   subtitle: Text(student.classId ?? 'Sınıf belirtilmemiş', style: GoogleFonts.poppins()),
                   trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                   onTap: () {
+                    // --- DEĞİŞİKLİK BURADA ---
+                    // Artık yeni detay sayfasına yönlendiriyoruz.
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => CoachStudentExamListPage(student: student),
+                        builder: (context) => CoachStudentDetailPage(student: student),
                       ),
                     );
                   },

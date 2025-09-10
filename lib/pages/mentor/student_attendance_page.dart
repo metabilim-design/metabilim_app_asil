@@ -1,8 +1,18 @@
+// lib/pages/mentor/student_attendance_page.dart - YENİ VE GÜNCELLENMİŞ TAM KOD
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
+
+// Her bir etüt saatinin yoklama durumunu tutacak bir model
+class AttendanceStatus {
+  final String timeSlot;
+  final String status; // 'geldi', 'gelmedi', 'alınmadı'
+
+  AttendanceStatus({required this.timeSlot, required this.status});
+}
 
 class StudentAttendancePage extends StatefulWidget {
   final String studentId;
@@ -23,7 +33,6 @@ class _StudentAttendancePageState extends State<StudentAttendancePage> {
 
   DateTime _focusedDate = DateTime.now();
   DateTime? _selectedDate;
-  final Map<DateTime, Map<String, bool>> _attendanceCache = {};
 
   @override
   void initState() {
@@ -31,38 +40,68 @@ class _StudentAttendancePageState extends State<StudentAttendancePage> {
     _selectedDate = _focusedDate;
   }
 
-  Future<Map<String, bool>> _getAttendanceForDate(DateTime date) async {
-    final dateOnly = DateTime.utc(date.year, date.month, date.day);
-    if (_attendanceCache.containsKey(dateOnly)) {
-      return _attendanceCache[dateOnly]!;
+  // ### BU FONKSİYON TAMAMEN YENİLENDİ ###
+  // Artık öğrencinin sınıf programına göre yoklama verilerini çekiyor.
+  Future<List<AttendanceStatus>> _getAttendanceForDate(DateTime date) async {
+    // 1. Adım: Öğrencinin sınıfını ve aktif programını bul
+    final userDoc = await _firestore.collection('users').doc(widget.studentId).get();
+    final classId = userDoc.data()?['class'] as String?;
+
+    if (classId == null || classId.isEmpty) {
+      // Öğrenci bir sınıfa atanmamışsa boş liste döndür
+      throw Exception('Öğrenci bir sınıfa atanmamış.');
     }
 
-    // DEĞİŞİKLİK: Artık _auth.currentUser.uid yerine widget.studentId kullanılıyor
-    final studentUid = widget.studentId;
-    final formattedDate = DateFormat('yyyy-MM-dd').format(date);
+    final classDoc = await _firestore.collection('classes').doc(classId).get();
+    if (!classDoc.exists) throw Exception('Öğrencinin sınıfı bulunamadı.');
 
+    final activeTimetableId = classDoc.data()?['activeTimetableId'] as String?;
+
+    if (activeTimetableId == null || activeTimetableId.isEmpty) {
+      // Sınıfa program atanmamışsa boş liste döndür
+      throw Exception('Sınıfa bir ders programı şablonu atanmamış.');
+    }
+
+    final templateDoc = await _firestore.collection('schedule_templates').doc(activeTimetableId).get();
+    if (!templateDoc.exists) throw Exception('Program şablonu bulunamadı.');
+
+    final timetable = templateDoc.data()?['timetable'] as Map<String, dynamic>? ?? {};
+    final dayName = _getDayNameInTurkish(date.weekday);
+
+    // 2. Adım: O gün için geçerli etüt saatlerini şablondan çek
+    final List<String> studySlots = List<String>.from(timetable[dayName] ?? []);
+    if (studySlots.isEmpty) {
+      return []; // O gün için etüt ayarlanmamışsa boş liste döndür
+    }
+    studySlots.sort(); // Saatleri sırala
+
+    // 3. Adım: Öğrencinin o güne ait tüm yoklama kayıtlarını çek
+    final formattedDate = DateFormat('yyyy-MM-dd').format(date);
     final querySnapshot = await _firestore
         .collection('attendance')
-        .where('studentUid', isEqualTo: studentUid)
+        .where('studentUid', isEqualTo: widget.studentId)
         .where('date', isEqualTo: formattedDate)
         .get();
 
-    final dailyAttendance = {
-      'Öğleden Önce': false,
-      'Öğleden Sonra': false,
-      'Akşam': false,
+    final Map<String, String> attendanceRecords = {
+      for (var doc in querySnapshot.docs) doc.data()['session']: doc.data()['status']
     };
 
-    for (var doc in querySnapshot.docs) {
-      final data = doc.data();
-      if (data.containsKey('session') && data.containsKey('status')) {
-        if (dailyAttendance.containsKey(data['session'])) {
-          dailyAttendance[data['session']] = (data['status'] == 'geldi');
-        }
-      }
+    // 4. Adım: Etüt saatlerini ve yoklama kayıtlarını birleştir
+    final List<AttendanceStatus> dailyAttendance = [];
+    for (var slot in studySlots) {
+      dailyAttendance.add(AttendanceStatus(
+        timeSlot: slot,
+        status: attendanceRecords[slot] ?? 'alınmadı',
+      ));
     }
-    _attendanceCache[dateOnly] = dailyAttendance;
+
     return dailyAttendance;
+  }
+
+  String _getDayNameInTurkish(int weekday) {
+    const days = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar'];
+    return days[weekday - 1];
   }
 
   @override
@@ -122,14 +161,8 @@ class _StudentAttendancePageState extends State<StudentAttendancePage> {
             rightChevronIcon: Icon(Icons.chevron_right, color: primaryColor),
           ),
           calendarStyle: CalendarStyle(
-            todayDecoration: BoxDecoration(
-              color: secondaryColor.withOpacity(0.5),
-              shape: BoxShape.circle,
-            ),
-            selectedDecoration: BoxDecoration(
-              color: primaryColor,
-              shape: BoxShape.circle,
-            ),
+            todayDecoration: BoxDecoration(color: secondaryColor.withOpacity(0.5), shape: BoxShape.circle),
+            selectedDecoration: BoxDecoration(color: primaryColor, shape: BoxShape.circle),
             weekendTextStyle: TextStyle(color: primaryColor.withOpacity(0.7)),
           ),
         ),
@@ -138,76 +171,84 @@ class _StudentAttendancePageState extends State<StudentAttendancePage> {
   }
 
   Widget _buildDailyAttendanceDetails(DateTime date) {
-    return FutureBuilder<Map<String, bool>>(
+    return FutureBuilder<List<AttendanceStatus>>(
       future: _getAttendanceForDate(date),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
-        if (snapshot.hasError || !snapshot.hasData || snapshot.data!.isEmpty) {
-          return Center(child: Text('Bu tarih için yoklama verisi bulunamadı.', style: GoogleFonts.poppins()));
+        if (snapshot.hasError) {
+          return Center(child: Text('Yoklama verisi yüklenemedi: ${snapshot.error}', textAlign: TextAlign.center, style: GoogleFonts.poppins(color: Colors.red)));
+        }
+        if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          return Center(child: Text('Bu tarih için öğrencinin programında etüt bulunmuyor.', style: GoogleFonts.poppins()));
         }
 
-        final attendance = snapshot.data!;
+        final attendanceList = snapshot.data!;
         return Container(
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(12),
             boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.2), spreadRadius: 1, blurRadius: 5)],
           ),
-          child: Padding(
-            padding: const EdgeInsets.all(20.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('${DateFormat('d MMMM EEEE', 'tr_TR').format(date)} Detayı', style: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.bold)),
-                _buildAttendanceRow('Öğleden Önce', attendance['Öğleden Önce'] ?? false),
-                _buildAttendanceRow('Öğleden Sonra', attendance['Öğleden Sonra'] ?? false),
-                _buildAttendanceRow('Akşam', attendance['Akşam'] ?? false),
-                _buildAttendanceSummary(attendance),
-              ],
-            ),
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(20.0),
+                child: Text(
+                  '${DateFormat('d MMMM EEEE', 'tr_TR').format(date)} Detayı',
+                  style: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: ListView.separated(
+                  itemCount: attendanceList.length,
+                  separatorBuilder: (context, index) => const Divider(height: 1, indent: 20, endIndent: 20),
+                  itemBuilder: (context, index) {
+                    final attendance = attendanceList[index];
+                    return _buildAttendanceRow(attendance.timeSlot, attendance.status);
+                  },
+                ),
+              ),
+            ],
           ),
         );
       },
     );
   }
 
-  Widget _buildAttendanceRow(String title, bool isPresent) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(title, style: GoogleFonts.poppins(fontSize: 16)),
-          Icon(
-            isPresent ? Icons.check_circle_outline : Icons.highlight_off,
-            color: isPresent ? Colors.green.shade600 : Colors.red.shade600,
-            size: 28,
-          ),
-        ],
-      ),
-    );
-  }
+  Widget _buildAttendanceRow(String timeSlot, String status) {
+    IconData icon;
+    Color color;
+    String statusText;
 
-  Widget _buildAttendanceSummary(Map<String, bool> attendance) {
-    final totalCount = attendance.length;
-    final presentCount = attendance.values.where((status) => status).length;
-    final summaryText = '$totalCount dersten $presentCount tanesine katıldı.';
+    switch (status) {
+      case 'geldi':
+        icon = Icons.check_circle_outline;
+        color = Colors.green.shade600;
+        statusText = 'Geldi';
+        break;
+      case 'gelmedi':
+        icon = Icons.highlight_off;
+        color = Colors.red.shade600;
+        statusText = 'Gelmedi';
+        break;
+      default: // 'alınmadı' durumu
+        icon = Icons.radio_button_unchecked;
+        color = Colors.grey.shade500;
+        statusText = 'Yoklama Alınmadı';
+    }
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: Theme.of(context).scaffoldBackgroundColor,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
+    return ListTile(
+      leading: Icon(Icons.access_time_filled, color: Theme.of(context).primaryColor),
+      title: Text(timeSlot, style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.pie_chart_outline, color: Theme.of(context).primaryColor, size: 20),
+          Text(statusText, style: GoogleFonts.poppins(color: color, fontWeight: FontWeight.w500)),
           const SizedBox(width: 8),
-          Text(summaryText, style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.grey.shade700)),
+          Icon(icon, color: color, size: 28),
         ],
       ),
     );

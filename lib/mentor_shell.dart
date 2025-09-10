@@ -1,12 +1,11 @@
-// lib/mentor_shell.dart
+// lib/mentor_shell.dart - GÜNCELLENMİŞ VE DOĞRU ÇALIŞAN HALİ
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:metabilim/pages/mentor/student_list_page.dart';
-import 'package:metabilim/pages/mentor/book_list_page.dart';
-import 'package:metabilim/pages/mentor/check_homework_page.dart';
-// ESKİ SAYFAYI SİLİP, YENİ AKIŞIN BAŞLANGIÇ SAYFASINI IMPORT EDİYORUZ
 import 'package:metabilim/pages/mentor/attendance_class_list_page.dart';
+import 'package:metabilim/pages/mentor/class_roster_page.dart';
+import 'package:metabilim/pages/mentor/book_list_page.dart';
+import 'package:metabilim/pages/mentor/take_attendance_page.dart';
 import 'package:metabilim/pages/mentor/profile_page.dart';
 
 class MentorShell extends StatefulWidget {
@@ -19,11 +18,12 @@ class MentorShell extends StatefulWidget {
 class _MentorShellState extends State<MentorShell> {
   int _selectedIndex = 0;
 
+  // Sayfaları yeni akışa göre düzenliyoruz
   static const List<Widget> _pages = <Widget>[
-    StudentListPage(),
-    BookListPage(),
-    CheckHomeworkPage(),
-    AttendanceClassListPage(), // ESKİ SAYFAYI YENİSİYLE DEĞİŞTİRDİK
+    ClassRosterPage(purpose: 'viewDetails'),  // Öğrenciler -> Sınıf Listesi
+    BookListPage(),                           // Kitaplar
+    ClassRosterPage(purpose: 'homeworkCheck'),// Ödev Kontrol -> Sınıf Listesi
+    AttendanceClassListPage(),                     // Yoklama Al
   ];
 
   void _onItemTapped(int index) {

@@ -1,3 +1,5 @@
+// lib/pages/student/dashboard_page.dart - GÜNCELLENMİŞ TAM KOD
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -24,9 +26,9 @@ class Event {
 class DashboardPage extends StatefulWidget {
   final String? studentId;
   final String? studentName;
-  final String? parentName; // YENİ: Veli ismini alacak parametre
+  final String? parentName;
 
-  const DashboardPage({super.key, this.studentId, this.studentName, this.parentName}); // YENİ
+  const DashboardPage({super.key, this.studentId, this.studentName, this.parentName});
 
   @override
   State<DashboardPage> createState() => _DashboardPageState();
@@ -51,9 +53,8 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Future<void> _loadUserData() async {
-    // GÜNCELLENDİ: Eğer veli ismi geldiyse, onu kullanıcı adı olarak ata
     if (widget.parentName != null) {
-      if(mounted) {
+      if (mounted) {
         setState(() {
           _userName = widget.parentName!;
           _isLoading = false;
@@ -62,11 +63,16 @@ class _DashboardPageState extends State<DashboardPage> {
       return;
     }
 
-    // Veli değilse, öğrencinin kendi ismini veritabanından çek
     DocumentSnapshot userData = await _firestore.collection('users').doc(_targetStudentId).get();
-    if (mounted) {
+    if (mounted && userData.exists) {
+      final data = userData.data() as Map<String, dynamic>?;
       setState(() {
-        _userName = userData.get('name');
+        _userName = data?['name'] ?? 'Kullanıcı';
+        _isLoading = false;
+      });
+    } else if (mounted) {
+      setState(() {
+        _userName = 'Kullanıcı';
         _isLoading = false;
       });
     }
@@ -80,44 +86,79 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Event _createEventFromTask(Map<String, dynamic> taskData, String time) {
-    String title = 'Bilinmeyen Görev';
-    String subtitle = '';
-    IconData icon = Icons.task_outlined;
-    Color iconColor = Colors.grey;
+    final type = taskData['type'] as String?;
 
-    final type = taskData['type'];
-
-    if (type == 'topic' || type == 'practice') {
-      title = '${(taskData['subject'] as String?)?.split('-').last ?? 'Ders'}: ${taskData['publisher'] ?? taskData['bookPublisher'] ?? ''}';
-      subtitle = (type == 'topic') ? '${taskData['konu']} (${taskData['chunkPageRange'] ?? taskData['sayfa']})' : 'Deneme';
-      icon = Icons.book_outlined;
-      iconColor = Colors.blueGrey;
-    } else if (type == 'digital') {
-      title = 'Dijital Etüt';
-      subtitle = taskData['task'] ?? '';
-      icon = Icons.laptop_chromebook_outlined;
-      iconColor = Colors.teal;
-    } else if (type == 'fixed') {
-      title = taskData['title'] ?? 'Etkinlik';
-      subtitle = 'Etkinlik';
-      icon = Icons.star_border_outlined;
-      iconColor = Colors.orange;
-    } else if (type == 'empty') {
-      title = 'Boş Etüt';
-      subtitle = 'Bu saatte bir görevin yok.';
-      icon = Icons.hourglass_empty;
-      iconColor = Colors.grey.shade400;
+    if (type == 'digital') {
+      return Event(
+        title: 'Dijital Etüt',
+        subtitle: taskData['task'] as String? ?? 'Çevrimiçi çalışma',
+        time: time,
+        icon: Icons.laptop_chromebook_outlined,
+        iconColor: Colors.teal,
+      );
     }
+    else if (type == 'topic') {
+      final subject = (taskData['subject'] as String?)?.split('-').last.trim() ?? 'Ders';
+      final publisher = taskData['bookPublisher'] as String? ?? '';
+      final topic = taskData['konu'] as String? ?? 'Konu';
+      final pageRange = taskData['chunkPageRange'] as String? ?? taskData['sayfa'] as String? ?? '';
 
-    return Event(title: title, subtitle: subtitle, time: time, icon: icon, iconColor: iconColor);
+      return Event(
+        title: '$subject: $publisher',
+        subtitle: '$topic ($pageRange)',
+        time: time,
+        icon: Icons.book_outlined,
+        iconColor: Colors.blueGrey,
+      );
+    }
+    else if (type == 'fixed') {
+      return Event(
+        title: taskData['title'] as String? ?? 'Etkinlik',
+        subtitle: 'Etkinlik',
+        time: time,
+        icon: Icons.star_border_outlined,
+        iconColor: Colors.orange,
+      );
+    }
+    else if (type == 'practice') {
+      final subject = (taskData['subject'] as String?)?.split('-').last.trim() ?? 'Ders';
+      final publisher = taskData['publisher'] as String? ?? 'Deneme';
+      return Event(
+        title: '$subject: $publisher',
+        subtitle: 'Deneme',
+        time: time,
+        icon: Icons.assessment_outlined,
+        iconColor: Colors.purple,
+      );
+    }
+    else if (type == 'empty') {
+      return Event(
+        title: 'Boş Etüt',
+        subtitle: 'Bu saatte bir görevin yok.',
+        time: time,
+        icon: Icons.hourglass_empty,
+        iconColor: Colors.grey.shade400,
+      );
+    }
+    else {
+      return Event(
+        title: 'Bilinmeyen Görev',
+        subtitle: 'Programda tanımlanmamış görev.',
+        time: time,
+        icon: Icons.help_outline,
+        iconColor: Colors.grey,
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+    // Sayfanın ana içeriğini bir değişkene alıyoruz.
+    final pageBody = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Hoşgeldin mesajı sadece öğrenci kendi paneline bakıyorsa gösterilir.
+        if (widget.parentName == null)
           Padding(
             padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 8.0),
             child: Row(
@@ -126,79 +167,93 @@ class _DashboardPageState extends State<DashboardPage> {
                   const CircularProgressIndicator()
                 else
                   Text(
-                    // GÜNCELLENDİ: Artık her zaman "Hoş Geldin" yazacak ve doğru ismi gösterecek
                       'Hoş Geldin, $_userName',
                       style: GoogleFonts.poppins(fontSize: 24, fontWeight: FontWeight.bold, color: const Color(0xFF003366))
                   ),
               ],
             ),
           ),
-          _buildDateScroller(),
-          const SizedBox(height: 8.0),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: Text(
-              // GÜNCELLENDİ: Veli giriş yaptıysa öğrencinin adını burada belirtiyoruz
-              widget.parentName != null ? "${widget.studentName}'in Günlük Programı" : 'Günün Programı',
-              style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600, color: const Color(0xFF003366).withOpacity(0.8)),
-            ),
+        _buildDateScroller(),
+        const SizedBox(height: 8.0),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+          child: Text(
+            widget.parentName != null ? "${widget.studentName}'in Günlük Programı" : 'Günün Programı',
+            style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600, color: const Color(0xFF003366).withOpacity(0.8)),
           ),
-          const SizedBox(height: 8.0),
-          Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: _firestore.collection('schedules').where('studentUid', isEqualTo: _targetStudentId).snapshots(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snapshot.hasError) {
-                  return Center(child: Text('Hata: ${snapshot.error}'));
-                }
-                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                  return Center(child: Text('Öğrenciye atanmış program bulunamadı.', style: GoogleFonts.poppins(fontSize: 16, color: Colors.grey)));
-                }
+        ),
+        const SizedBox(height: 8.0),
+        Expanded(
+          child: StreamBuilder<QuerySnapshot>(
+            stream: _firestore.collection('schedules').where('studentUid', isEqualTo: _targetStudentId).snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (snapshot.hasError) {
+                return Center(child: Text('Hata: ${snapshot.error}'));
+              }
+              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                return Center(child: Text('Öğrenciye atanmış program bulunamadı.', style: GoogleFonts.poppins(fontSize: 16, color: Colors.grey)));
+              }
 
-                final allSchedules = snapshot.data!.docs;
-                final selectedDateOnly = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
+              final allSchedules = snapshot.data!.docs;
+              final selectedDateOnly = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
 
-                final correctScheduleDoc = allSchedules.firstWhereOrNull((doc) {
-                  final data = doc.data() as Map<String, dynamic>;
-                  final startDate = (data['startDate'] as Timestamp).toDate();
-                  final endDate = (data['endDate'] as Timestamp).toDate();
-                  return (selectedDateOnly.isAfter(startDate) || selectedDateOnly.isAtSameMomentAs(startDate)) &&
-                      (selectedDateOnly.isBefore(endDate) || selectedDateOnly.isAtSameMomentAs(endDate));
-                });
+              final correctScheduleDoc = allSchedules.firstWhereOrNull((doc) {
+                final data = doc.data() as Map<String, dynamic>;
+                final startDate = (data['startDate'] as Timestamp).toDate();
+                final endDate = (data['endDate'] as Timestamp).toDate();
+                final startOfDay = DateTime(startDate.year, startDate.month, startDate.day);
+                final endOfDay = DateTime(endDate.year, endDate.month, endDate.day, 23, 59, 59);
+                return selectedDateOnly.isAtSameMomentAs(startOfDay) || (selectedDateOnly.isAfter(startOfDay) && selectedDateOnly.isBefore(endOfDay)) || selectedDateOnly.isAtSameMomentAs(endOfDay);
+              });
 
-                if (correctScheduleDoc == null) {
-                  return Center(child: Text('Bu tarih için bir program bulunamadı.', style: GoogleFonts.poppins(fontSize: 16, color: Colors.grey)));
-                }
+              if (correctScheduleDoc == null) {
+                return Center(child: Text('Bu tarih için bir program bulunamadı.', style: GoogleFonts.poppins(fontSize: 16, color: Colors.grey)));
+              }
 
-                final allSlots = correctScheduleDoc.get('dailySlots') as Map<String, dynamic>;
-                final dateKey = DateFormat('yyyy-MM-dd').format(_selectedDate);
-                final slotsForToday = allSlots[dateKey] as List<dynamic>? ?? [];
+              final allSlots = correctScheduleDoc.get('dailySlots') as Map<String, dynamic>;
+              final dateKey = DateFormat('yyyy-MM-dd').format(_selectedDate);
+              final slotsForToday = allSlots[dateKey] as List<dynamic>? ?? [];
 
-                if (slotsForToday.isEmpty) {
-                  return Center(child: Text('Bugün için planlanmış bir etkinlik yok.', style: GoogleFonts.poppins(fontSize: 16, color: Colors.grey)));
-                }
+              if (slotsForToday.isEmpty) {
+                return Center(child: Text('Bugün için planlanmış bir etkinlik yok.', style: GoogleFonts.poppins(fontSize: 16, color: Colors.grey)));
+              }
 
-                return ListView.builder(
-                  padding: const EdgeInsets.only(top: 4.0),
-                  itemCount: slotsForToday.length,
-                  itemBuilder: (context, index) {
-                    final slot = slotsForToday[index];
-                    final time = (slot['time'] as String?) ?? '00:00 - 00:00';
-                    final task = (slot['task'] as Map<String, dynamic>?) ?? {'type': 'empty'};
-                    final Event event = _createEventFromTask(task, time);
+              return ListView.builder(
+                padding: const EdgeInsets.only(top: 4.0),
+                itemCount: slotsForToday.length,
+                itemBuilder: (context, index) {
+                  final slot = slotsForToday[index] as Map<String, dynamic>;
+                  final time = (slot['time'] as String?) ?? '00:00 - 00:00';
+                  final task = (slot['task'] as Map<String, dynamic>?) ?? {'type': 'empty'};
+                  final Event event = _createEventFromTask(task, time);
 
-                    return _buildEventTile(event, isParentView: widget.studentId != null);
-                  },
-                );
-              },
-            ),
+                  return _buildEventTile(event, isParentView: widget.studentId != null);
+                },
+              );
+            },
           ),
-        ],
-      ),
+        ),
+      ],
     );
+
+    // --- YENİ EKLENEN KISIM ---
+    // Eğer parentName varsa (yani mentor/veli bakıyorsa), AppBar ekle.
+    // Bu AppBar, geri butonunu otomatik olarak oluşturur.
+    return Scaffold(
+      appBar: widget.parentName != null
+          ? AppBar(
+        title: Text(widget.studentName ?? 'Öğrenci Programı'),
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        elevation: 0,
+        foregroundColor: Colors.black87,
+      )
+          : null,
+      body: pageBody,
+    );
+    // --- BİTTİ ---
   }
 
   Widget _buildDateScroller() {

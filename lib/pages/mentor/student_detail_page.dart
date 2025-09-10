@@ -1,11 +1,14 @@
+// lib/pages/mentor/student_detail_page.dart - GÜNCELLENMİŞ TAM KOD
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:metabilim/models/user_model.dart'; // AppUser modelimizi dahil ediyoruz
-import 'package:metabilim/pages/coach/coach_student_exam_list_page.dart'; // YENİ: Deneme sonuçları sayfasını dahil ediyoruz
-import 'package:metabilim/pages/mentor/homework_check_page.dart';
+import 'package:metabilim/models/user_model.dart';
+import 'package:metabilim/pages/coach/coach_student_exam_list_page.dart';
+// YENİ: Yeni ödev kontrol sayfasını import ediyoruz
+import 'package:metabilim/pages/mentor/check_homework_page.dart';
 import 'package:metabilim/pages/mentor/student_attendance_page.dart';
-import 'package:metabilim/pages/mentor/student_schedule_page.dart';
+import 'package:metabilim/pages/student/dashboard_page.dart';
 
 class StudentDetailPage extends StatefulWidget {
   final String studentId;
@@ -22,22 +25,18 @@ class StudentDetailPage extends StatefulWidget {
 }
 
 class _StudentDetailPageState extends State<StudentDetailPage> {
-  // Bu Future, öğrencinin tüm bilgilerini veritabanından çekecek
   late Future<AppUser?> _studentFuture;
 
   @override
   void initState() {
     super.initState();
-    // Sayfa ilk açıldığında öğrenci verisini çekme işlemini başlatıyoruz
     _studentFuture = _fetchStudent();
   }
 
-  // Veritabanından AppUser nesnesini çeken fonksiyon
   Future<AppUser?> _fetchStudent() async {
     try {
       final doc = await FirebaseFirestore.instance.collection('users').doc(widget.studentId).get();
       if (doc.exists) {
-        // user_model.dart dosyasındaki 'fromMap' metodunu kullanarak AppUser nesnesi oluşturuyoruz
         return AppUser.fromMap(doc.data()!, doc.id);
       }
       return null;
@@ -53,23 +52,18 @@ class _StudentDetailPageState extends State<StudentDetailPage> {
       appBar: AppBar(
         title: Text(widget.studentName, style: GoogleFonts.poppins()),
       ),
-      // FutureBuilder ile, veri çekilene kadar bekleyip sonra ekranı çiziyoruz
       body: FutureBuilder<AppUser?>(
         future: _studentFuture,
         builder: (context, snapshot) {
-          // Veri henüz gelmediyse, yükleniyor animasyonu göster
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
-          // Hata oluştuysa veya öğrenci bulunamadıysa, hata mesajı göster
           if (snapshot.hasError || !snapshot.hasData || snapshot.data == null) {
             return const Center(child: Text('Öğrenci bilgileri yüklenemedi.'));
           }
 
-          // Veri başarıyla geldiyse, student nesnesini al
           final student = snapshot.data!;
 
-          // Kartları ve arayüzü oluştur
           return GridView.count(
             crossAxisCount: 2,
             padding: const EdgeInsets.all(16.0),
@@ -84,9 +78,10 @@ class _StudentDetailPageState extends State<StudentDetailPage> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => StudentSchedulePage(
+                      builder: (context) => DashboardPage(
                         studentId: student.uid,
                         studentName: '${student.name} ${student.surname}',
+                        parentName: 'Mentor',
                       ),
                     ),
                   );
@@ -108,13 +103,11 @@ class _StudentDetailPageState extends State<StudentDetailPage> {
                   );
                 },
               ),
-              // --- DEĞİŞİKLİK BURADA ---
               _buildFeatureCard(
                 context: context,
                 icon: Icons.bar_chart_outlined,
-                label: 'Deneme Sonuçları', // Eskiden 'İstatistikleri' idi
+                label: 'Deneme Sonuçları',
                 onTap: () {
-                  // Artık elimizde tam bir 'student' nesnesi var, onu diğer sayfaya yolluyoruz
                   Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -123,15 +116,17 @@ class _StudentDetailPageState extends State<StudentDetailPage> {
                   );
                 },
               ),
+              // --- DEĞİŞİKLİK BURADA ---
               _buildFeatureCard(
                 context: context,
                 icon: Icons.edit_note_outlined,
                 label: 'Ödev Kontrol',
                 onTap: () {
+                  // Artık yeni ve gelişmiş ödev kontrol sayfasına yönlendiriyoruz
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => HomeworkCheckPage(
+                      builder: (context) => CheckHomeworkPage(
                         studentId: student.uid,
                         studentName: '${student.name} ${student.surname}',
                       ),
@@ -146,7 +141,6 @@ class _StudentDetailPageState extends State<StudentDetailPage> {
     );
   }
 
-  // Kartları oluşturan yardımcı fonksiyon (hiçbir değişiklik yok)
   Widget _buildFeatureCard({
     required BuildContext context,
     required IconData icon,

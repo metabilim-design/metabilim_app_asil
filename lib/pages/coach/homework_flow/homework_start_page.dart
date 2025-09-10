@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:metabilim/pages/coach/homework_flow/select_student_page.dart';
+import 'package:metabilim/pages/coach/homework_flow/continue_select_student_page.dart'; // YENİ: Yeni sayfayı import ettik
 
 class HomeworkStartPage extends StatelessWidget {
   const HomeworkStartPage({Key? key}) : super(key: key);
@@ -32,18 +33,21 @@ class HomeworkStartPage extends StatelessWidget {
                 },
               ),
               const SizedBox(height: 20),
+              // --- DEĞİŞİKLİK BURADA ---
               _buildOptionCard(
                 context: context,
                 icon: Icons.history,
                 title: 'Önceki Programdan Devam Et',
                 subtitle: 'Mevcut bir programı kopyalayın veya düzenleyerek devam edin.',
                 onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                    content: Text('Bu özellik yakında eklenecektir.'),
+                  // Artık Snackbar göstermek yerine yeni sayfaya yönlendiriyoruz.
+                  Navigator.of(context).push(MaterialPageRoute(
+                    builder: (context) => const ContinueSelectStudentPage(),
                   ));
                 },
-                enabled: false, // Şimdilik devre dışı
+                enabled: true, // Artık bu özellik aktif
               ),
+              // --- BİTTİ ---
             ],
           ),
         ),
