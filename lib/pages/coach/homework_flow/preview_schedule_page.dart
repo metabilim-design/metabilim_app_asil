@@ -1,5 +1,3 @@
-// lib/pages/coach/homework_flow/preview_schedule_page.dart
-
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -41,14 +39,12 @@ class _PreviewSchedulePageState extends State<PreviewSchedulePage> {
   @override
   void initState() { super.initState(); _generateSchedule(); }
 
-  // ### DİJİTAL ETÜT MANTIĞI TAMAMEN YENİLENDİ ###
   Future<void> _generateSchedule() async {
     setState(() { _isLoading = true; _infoMessage = null; });
     try {
       final firestore = FirebaseFirestore.instance;
       List<EtudSlot> allSlots = [];
 
-      // 1. Adım: Sınıfın program şablonunu çek
       if (widget.student.classId == null || widget.student.classId!.isEmpty) {
         throw Exception('Bu öğrenci herhangi bir sınıfa atanmamış.');
       }
@@ -62,7 +58,6 @@ class _PreviewSchedulePageState extends State<PreviewSchedulePage> {
       if (!templateDoc.exists) throw Exception('Atanan program şablonu bulunamadı.');
       final timetable = templateDoc.data()?['timetable'] as Map<String, dynamic>? ?? {};
 
-      // 2. Adım: Tarih aralığındaki tüm normal etüt saatlerini oluştur
       for (var day = widget.startDate; day.isBefore(widget.endDate.add(const Duration(days: 1))); day = day.add(const Duration(days: 1))) {
         String dayName = _getDayNameInTurkish(day.weekday);
         final slotsForDay = timetable[dayName] as List<dynamic>? ?? [];
@@ -79,8 +74,6 @@ class _PreviewSchedulePageState extends State<PreviewSchedulePage> {
         }
       }
 
-      // 3. Adım: Öğrencinin haftalık sabit dijital programını çıkar
-      // Örn: {'Pazartesi': ['09:00-09:40'], 'Çarşamba': ['09:50-10:30']}
       final Map<String, List<String>> studentWeeklyDigitalSchedule = {};
       final digitalSchedulesSnapshot = await firestore.collection('digital_schedules').get();
       for (var computerDoc in digitalSchedulesSnapshot.docs) {
@@ -94,30 +87,25 @@ class _PreviewSchedulePageState extends State<PreviewSchedulePage> {
         });
       }
 
-      // 4. Adım: Normal etüt listesini gez, dijital olanları işaretle
-      // Yeni bir liste oluşturarak karışıklığı önlüyoruz.
       List<EtudSlot> updatedSlots = [];
       for (var slot in allSlots) {
         String dayName = _getDayNameInTurkish(slot.dateTime.weekday);
         String time = DateFormat('HH:mm').format(slot.dateTime);
-
         final digitalSlotsForDay = studentWeeklyDigitalSchedule[dayName] ?? [];
         final isDigitalMatch = digitalSlotsForDay.any((digitalTimeSlot) => digitalTimeSlot.startsWith(time));
-
         if (isDigitalMatch) {
           updatedSlots.add(EtudSlot(dateTime: slot.dateTime, isDigital: true, lessonName: 'Dijital Etüt'));
         } else {
           updatedSlots.add(slot);
         }
       }
-      allSlots = updatedSlots; // Eski listeyi güncel olanla değiştir
+      allSlots = updatedSlots;
 
       if (allSlots.isEmpty) {
         if(mounted) setState(() { _infoMessage = 'Seçilen tarih aralığı için bu sınıfın programında etüt saati bulunamadı.'; _isLoading = false; });
         return;
       }
 
-      // 5. Adım: Kalan normal etütlere dersleri dağıt
       allSlots.sort((a, b) => a.dateTime.compareTo(b.dateTime));
       List<List<String>> lessonsToPlace = [];
       widget.tytLessons.forEach((lesson, count) { for (int i = 0; i < count; i++) lessonsToPlace.add(['TYT', lesson]); });
@@ -136,27 +124,19 @@ class _PreviewSchedulePageState extends State<PreviewSchedulePage> {
         }
       }
 
-      // 6. Adım: Günlere göre grupla
       Map<DateTime, List<EtudSlot>> groupedSchedule = {};
       for (var slot in allSlots) {
         final dateOnly = DateTime(slot.dateTime.year, slot.dateTime.month, slot.dateTime.day);
         groupedSchedule.putIfAbsent(dateOnly, () => []).add(slot);
       }
-      groupedSchedule.forEach((key, value) {
-        value.sort((a,b) => a.dateTime.compareTo(b.dateTime));
-      });
-
-      if(mounted) setState(() { _schedule = groupedSchedule; });
-
+      groupedSchedule.forEach((key, value) => value.sort((a,b) => a.dateTime.compareTo(b.dateTime)));
+      if(mounted) setState(() => _schedule = groupedSchedule);
     } catch (e) {
-      print('Program oluşturulurken kritik hata: $e');
       if(mounted) _infoMessage = 'Program oluşturulamadı: ${e.toString().replaceFirst("Exception: ", "")}';
     } finally {
       if(mounted) setState(() => _isLoading = false);
     }
   }
-
-  // Geri kalan fonksiyonlar aynı, dokunulmadı...
 
   void _handleSwap(EtudSlot clickedSlot) {
     if (clickedSlot.isDigital || clickedSlot.lessonName == null || clickedSlot.lessonName == 'Boş Etüt') return;
@@ -217,9 +197,7 @@ class _PreviewSchedulePageState extends State<PreviewSchedulePage> {
                   itemBuilder: (context, slotIndex) {
                     final slot = slots[slotIndex];
                     final isSelectedForSwap = _selectedForSwap == slot;
-                    final Color? lessonColor = slot.isDigital
-                        ? Colors.teal.shade100
-                        : (slot.lessonType == 'TYT' ? Colors.blue.shade100 : slot.lessonType == 'AYT' ? Colors.orange.shade100 : Colors.grey.shade200);
+                    final Color? lessonColor = slot.isDigital ? Colors.teal.shade100 : (slot.lessonType == 'TYT' ? Colors.blue.shade100 : slot.lessonType == 'AYT' ? Colors.orange.shade100 : Colors.grey.shade200);
                     return Card(
                       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                       color: isSelectedForSwap ? Colors.amber.withOpacity(0.3) : lessonColor,
@@ -243,6 +221,8 @@ class _PreviewSchedulePageState extends State<PreviewSchedulePage> {
         padding: const EdgeInsets.all(16.0),
         child: ElevatedButton(
           onPressed: (_isLoading || _infoMessage != null) ? null : () {
+            // --- DÜZELTME BURADA YAPILDI ---
+            // Artık bir sonraki sayfaya doğru ve tam bilgileri gönderiyoruz.
             Navigator.of(context).push(MaterialPageRoute(
               builder: (context) => SelectMaterialsPage(
                 student: widget.student,

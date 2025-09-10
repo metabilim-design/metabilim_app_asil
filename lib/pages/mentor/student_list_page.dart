@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:metabilim/pages/mentor/class_roster_page.dart';
-import 'package:metabilim/pages/mentor/study_schedule_view_page.dart';
+import 'package:metabilim/pages/mentor/students_by_class_page.dart'; // Bir sonraki adımda oluşturacağımız sayfa
 
 class StudentListPage extends StatefulWidget {
   const StudentListPage({super.key});
@@ -11,107 +10,67 @@ class StudentListPage extends StatefulWidget {
   State<StudentListPage> createState() => _StudentListPageState();
 }
 
-// Hangi görünümün aktif olduğunu tutan enum
-enum MentorView { classView, studyView }
-
 class _StudentListPageState extends State<StudentListPage> {
-  MentorView _currentView = MentorView.classView;
-
-  // Admin panelinde tanımlı olan sınıf seviyeleri ve şubeler
-  final List<String> _gradeLevels = ['9', '10', '11', '12', 'Mezun'];
-  final List<String> _branchLetters = List.generate(12, (index) => String.fromCharCode('A'.codeUnitAt(0) + index));
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   @override
   Widget build(BuildContext context) {
-    // Tüm olası sınıf adlarını oluşturuyoruz (örn: "9-A", "9-B"...)
-    final List<String> allPossibleClasses = [];
-    for (var grade in _gradeLevels) {
-      for (var branch in _branchLetters) {
-        allPossibleClasses.add('$grade-$branch');
-      }
-    }
-
     return Scaffold(
       appBar: AppBar(
-        title: Text(_currentView == MentorView.classView ? 'Sınıf Listesi' : 'Etüt Programı', style: GoogleFonts.poppins()),
-        centerTitle: true,
-        // Görünümler arası geçiş butonu
-        actions: [
-          IconButton(
-            icon: Icon(_currentView == MentorView.classView ? Icons.access_time_filled_outlined : Icons.class_outlined),
-            tooltip: _currentView == MentorView.classView ? 'Etüt Görünümüne Geç' : 'Sınıf Görünümüne Geç',
-            onPressed: () {
-              setState(() {
-                _currentView = _currentView == MentorView.classView ? MentorView.studyView : MentorView.classView;
-              });
-            },
-          ),
-        ],
+        title: Text('Sınıflar', style: GoogleFonts.poppins()),
+        automaticallyImplyLeading: false, // Geri tuşunu kaldır
       ),
-      // Aktif görünüme göre ilgili sayfayı göster
-      body: _currentView == MentorView.classView
-          ? _buildClassView(allPossibleClasses)
-          : const StudyScheduleViewPage(), // Yeni Etüt Görünümü sayfası
-    );
-  }
-
-  // Sınıf Görünümünü oluşturan widget
-  Widget _buildClassView(List<String> classList) {
-    return StreamBuilder<QuerySnapshot>(
-      // Tüm öğrencileri bir kere çekip sınıflara göre gruplayacağız
-      stream: FirebaseFirestore.instance.collection('users').where('role', isEqualTo: 'Ogrenci').snapshots(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (snapshot.hasError) {
-          return const Center(child: Text('Öğrenciler yüklenemedi.'));
-        }
-
-        // Öğrencileri sınıflarına göre bir haritada grupla
-        final studentCountByClass = <String, int>{};
-        if (snapshot.hasData) {
-          for (var doc in snapshot.data!.docs) {
-            // DÜZELTME: Veriyi güvenli bir şekilde okuyoruz
-            final data = doc.data() as Map<String, dynamic>;
-            if (data.containsKey('class')) {
-              final studentClass = data['class'] as String?;
-              if (studentClass != null) {
-                studentCountByClass[studentClass] = (studentCountByClass[studentClass] ?? 0) + 1;
-              }
-            }
+      body: StreamBuilder<QuerySnapshot>(
+        // Veritabanındaki 'classes' koleksiyonundan tüm sınıfları çek
+        stream: _firestore.collection('classes').orderBy('className').snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
           }
-        }
+          if (snapshot.hasError) {
+            return Center(child: Text('Sınıflar yüklenirken bir hata oluştu: ${snapshot.error}'));
+          }
+          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+            return const Center(child: Text('Sisteme kayıtlı sınıf bulunamadı.'));
+          }
 
-        return ListView.builder(
-          padding: const EdgeInsets.all(8.0),
-          itemCount: classList.length,
-          itemBuilder: (context, index) {
-            final className = classList[index];
-            final studentCount = studentCountByClass[className] ?? 0;
+          final classes = snapshot.data!.docs;
 
-            return Card(
-              elevation: 2,
-              margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
-              child: ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: Theme.of(context).primaryColor.withOpacity(0.1),
-                  child: Text(className.split('-')[0], style: TextStyle(color: Theme.of(context).primaryColor, fontWeight: FontWeight.bold)),
+          return ListView.builder(
+            padding: const EdgeInsets.all(8.0),
+            itemCount: classes.length,
+            itemBuilder: (context, index) {
+              final classDoc = classes[index];
+              final className = classDoc['className'] ?? 'İsimsiz Sınıf';
+              final classId = classDoc.id;
+
+              return Card(
+                elevation: 3,
+                margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                child: ListTile(
+                  contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                  leading: const Icon(Icons.class_, color: Colors.blueGrey, size: 32),
+                  title: Text(className, style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600)),
+                  trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                  onTap: () {
+                    // Tıklanan sınıfın ID'si ve adıyla yeni sayfaya git
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => StudentsByClassPage(
+                          classId: classId,
+                          className: className,
+                        ),
+                      ),
+                    );
+                  },
                 ),
-                title: Text('$className Sınıfı', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
-                subtitle: Text('$studentCount öğrenci kayıtlı'),
-                trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                onTap: () {
-                  // Sınıfa tıklandığında, o sınıftaki öğrencileri gösteren yeni sayfaya git
-                  Navigator.push(context, MaterialPageRoute(
-                    builder: (context) => ClassRosterPage(className: className),
-                  ));
-                },
-              ),
-            );
-          },
-        );
-      },
+              );
+            },
+          );
+        },
+      ),
     );
   }
 }

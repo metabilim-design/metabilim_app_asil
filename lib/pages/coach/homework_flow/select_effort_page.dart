@@ -1,20 +1,26 @@
 import 'package:flutter/material.dart';
-import 'select_topic_page.dart'; // Yeni oluşturduğumuz sayfayı import ediyoruz
+import 'package:metabilim/models/user_model.dart'; // YENİ: AppUser modelini tanımak için
+import 'package:metabilim/pages/coach/homework_flow/preview_schedule_page.dart'; // YENİ: EtudSlot modelini tanımak için
+import 'select_topic_page.dart';
 
 class SelectEffortPage extends StatefulWidget {
-  final String studentId;
+  // --- DEĞİŞİKLİK BURADA ---
+  // Artık studentId yerine tam AppUser nesnesini ve schedule'ı alıyoruz.
+  final AppUser student;
   final DateTime startDate;
   final DateTime endDate;
   final Map<String, int> lessonEtuds;
   final List<String> selectedMaterials;
+  final Map<DateTime, List<EtudSlot>> schedule;
 
   const SelectEffortPage({
     Key? key,
-    required this.studentId,
+    required this.student, // Değişti
     required this.startDate,
     required this.endDate,
     required this.lessonEtuds,
     required this.selectedMaterials,
+    required this.schedule, // Eklendi
   }) : super(key: key);
 
   @override
@@ -62,18 +68,20 @@ class _SelectEffortPageState extends State<SelectEffortPage> {
             ),
             SizedBox(height: 40),
             ElevatedButton(
-              // DEĞİŞİKLİK BURADA: Artık yeni Konu Seçim Sayfasına yönlendiriyoruz.
               onPressed: () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (context) => SelectTopicPage(
-                      studentId: widget.studentId,
+                      // --- DEĞİŞİKLİK BURADA ---
+                      // Artık bir sonraki sayfaya doğru ve tam bilgileri gönderiyoruz.
+                      student: widget.student,
                       startDate: widget.startDate,
                       endDate: widget.endDate,
                       lessonEtuds: widget.lessonEtuds,
                       selectedMaterials: widget.selectedMaterials,
-                      effortRating: _effortRating, // Seçilen eforu da aktarıyoruz
+                      effortRating: _effortRating,
+                      schedule: widget.schedule,
                     ),
                   ),
                 );

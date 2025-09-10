@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:metabilim/models/user_model.dart'; // YENİ: AppUser'ı tanımak için
+import 'package:metabilim/pages/coach/homework_flow/preview_schedule_page.dart'; // YENİ: EtudSlot'u tanımak için
+import 'package:metabilim/pages/coach/homework_flow/finalize_schedule_page.dart';
 
-// ----- MODELLER: Veritabanından gelen verileri bu sağlam yapılarda tutacağız -----
+// ----- MODELLER -----
 
 class Topic {
   final String konu;
@@ -22,8 +25,8 @@ class Topic {
   factory Topic.fromMap(Map<String, dynamic> map) {
     return Topic(
       konu: map['konu'] ?? 'İsimsiz Konu',
-      startPage: map['start_page'] ?? 0, // Yeni formata uygun
-      endPage: map['end_page'] ?? 0,     // Yeni formata uygun
+      startPage: map['start_page'] ?? 0,
+      endPage: map['end_page'] ?? 0,
     );
   }
 }
@@ -32,7 +35,7 @@ class Book {
   final String id;
   final String name;
   final String lesson;
-  final int difficulty; // 1-5 arası zorluk
+  final int difficulty;
   final List<Topic> topics;
 
   Book({
@@ -47,21 +50,23 @@ class Book {
 // ----- ANA SAYFA WIDGET'I -----
 
 class SelectTopicPage extends StatefulWidget {
-  final String studentId;
+  final AppUser student;
   final DateTime startDate;
   final DateTime endDate;
-  final Map<String, int> lessonEtuds; // Örn: {'TYT Matematik': 8}
-  final List<String> selectedMaterials; // Seçilen kitapların ID'leri
-  final int effortRating; // 1-5 arası efor
+  final Map<String, int> lessonEtuds;
+  final List<String> selectedMaterials;
+  final int effortRating;
+  final Map<DateTime, List<EtudSlot>> schedule;
 
   const SelectTopicPage({
     Key? key,
-    required this.studentId,
+    required this.student,
     required this.startDate,
     required this.endDate,
     required this.lessonEtuds,
     required this.selectedMaterials,
     required this.effortRating,
+    required this.schedule,
   }) : super(key: key);
 
   @override
@@ -70,7 +75,6 @@ class SelectTopicPage extends StatefulWidget {
 
 class _SelectTopicPageState extends State<SelectTopicPage> {
   bool _isLoading = true;
-
   final Map<String, int> _totalPageQuotas = {};
   final Map<String, int> _solvedPageQuotas = {};
   final Map<String, List<Book>> _booksByLesson = {};
@@ -83,34 +87,22 @@ class _SelectTopicPageState extends State<SelectTopicPage> {
 
   Future<void> _initializePageData() async {
     await _fetchBooksAndCalculateQuotas();
-    if (mounted) {
-      setState(() {
-        _isLoading = false;
-      });
-    }
+    if (mounted) setState(() => _isLoading = false);
   }
-
-  // ----- MATEMATİK VE VERİ ÇEKME İŞLEMLERİ -----
 
   Future<void> _fetchBooksAndCalculateQuotas() async {
     if (widget.selectedMaterials.isEmpty) return;
 
-    final booksSnapshot = await FirebaseFirestore.instance
-        .collection('books')
-        .where(FieldPath.documentId, whereIn: widget.selectedMaterials)
-        .get();
-
+    final booksSnapshot = await FirebaseFirestore.instance.collection('books').where(FieldPath.documentId, whereIn: widget.selectedMaterials).get();
     final List<Book> allBooks = [];
     for (var doc in booksSnapshot.docs) {
       final data = doc.data();
-      final List<dynamic> topicsData = data['topics'] ?? [];
-
       allBooks.add(Book(
         id: doc.id,
         name: data['bookType'] ?? 'İsimsiz Kitap',
         lesson: '${data['level']} ${data['subject']}',
         difficulty: data['difficulty'] ?? 3,
-        topics: topicsData.map((topicMap) => Topic.fromMap(topicMap)).toList(),
+        topics: List<Map<String, dynamic>>.from(data['topics'] ?? []).map((topicMap) => Topic.fromMap(topicMap)).toList(),
       ));
     }
 
@@ -121,16 +113,13 @@ class _SelectTopicPageState extends State<SelectTopicPage> {
     for (String lessonName in widget.lessonEtuds.keys) {
       final etudCount = widget.lessonEtuds[lessonName]!;
       final booksForLesson = _booksByLesson[lessonName] ?? [];
-
       if (booksForLesson.isEmpty) {
         _totalPageQuotas[lessonName] = 0;
         _solvedPageQuotas[lessonName] = 0;
         continue;
       }
-
       final avgDifficulty = booksForLesson.map((b) => b.difficulty).reduce((a, b) => a + b) / booksForLesson.length;
       final quota = _calculatePageQuota(etudCount, lessonName, avgDifficulty, widget.effortRating);
-
       _totalPageQuotas[lessonName] = quota;
       _solvedPageQuotas[lessonName] = 0;
     }
@@ -156,15 +145,41 @@ class _SelectTopicPageState extends State<SelectTopicPage> {
     setState(() {
       topic.isSelected = isSelected;
       int currentPageCount = _solvedPageQuotas[lessonName] ?? 0;
-      if (isSelected) {
-        _solvedPageQuotas[lessonName] = currentPageCount + topic.pageCount;
-      } else {
-        _solvedPageQuotas[lessonName] = currentPageCount - topic.pageCount;
-      }
+      _solvedPageQuotas[lessonName] = isSelected ? currentPageCount + topic.pageCount : currentPageCount - topic.pageCount;
     });
   }
 
-  // ----- ARAYÜZ KODLARI -----
+  void _finalizeAndProceed() {
+    final Map<String, List<Book>> selectedTopicsByLesson = {};
+    _booksByLesson.forEach((lessonName, bookList) {
+      List<Book> booksWithSelectedTopics = [];
+      for (var book in bookList) {
+        final selectedTopics = book.topics.where((topic) => topic.isSelected).toList();
+        if (selectedTopics.isNotEmpty) {
+          booksWithSelectedTopics.add(Book(
+            id: book.id, name: book.name, lesson: book.lesson,
+            difficulty: book.difficulty, topics: selectedTopics,
+          ));
+        }
+      }
+      if (booksWithSelectedTopics.isNotEmpty) {
+        selectedTopicsByLesson[lessonName] = booksWithSelectedTopics;
+      }
+    });
+
+    if (selectedTopicsByLesson.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Lütfen devam etmek için en az bir konu seçin.')));
+      return;
+    }
+
+    Navigator.push(context, MaterialPageRoute(builder: (context) => FinalizeSchedulePage(
+      student: widget.student,
+      startDate: widget.startDate,
+      endDate: widget.endDate,
+      initialSchedule: widget.schedule,
+      selectedTopicsByLesson: selectedTopicsByLesson,
+    )));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -187,17 +202,18 @@ class _SelectTopicPageState extends State<SelectTopicPage> {
       bottomNavigationBar: Padding(
         padding: const EdgeInsets.all(16.0),
         child: ElevatedButton(
-          onPressed: _isLoading ? null : () { /* TODO: Önizleme sayfasına git */ },
+          onPressed: _isLoading ? null : _finalizeAndProceed,
           style: ElevatedButton.styleFrom(
             padding: const EdgeInsets.symmetric(vertical: 16),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
-          child: Text('Programı Önizle ve Bitir', style: GoogleFonts.poppins(fontSize: 16)),
+          child: Text('Programı Dağıt ve Önizle', style: GoogleFonts.poppins(fontSize: 16)),
         ),
       ),
     );
   }
 
+  // --- DÜZELTME: Artık bu fonksiyonlar her zaman bir widget döndürüyor ---
   Widget _buildLessonCard(String lessonName) {
     final totalPages = _totalPageQuotas[lessonName]!;
     final solvedPages = _solvedPageQuotas[lessonName]!;
@@ -241,7 +257,7 @@ class _SelectTopicPageState extends State<SelectTopicPage> {
   }
 
   Widget _buildBookTile(Book book, String lessonName) {
-    if(book.topics.isEmpty) return SizedBox.shrink();
+    if (book.topics.isEmpty) return SizedBox.shrink(); // Eğer kitabın konusu yoksa boş bir widget döndür
 
     return ExpansionTile(
       title: Text(book.name, style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
