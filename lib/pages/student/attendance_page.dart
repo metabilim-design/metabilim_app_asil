@@ -1,3 +1,5 @@
+// lib/pages/student/attendance_page.dart
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
@@ -5,7 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-// GÜNCELLENDİ: Her bir etüt saatinin yoklama durumunu tutacak bir model
+// Her bir etüt saatinin yoklama durumunu tutacak bir model
 class AttendanceStatus {
   final String timeSlot;
   final String status; // 'geldi', 'gelmedi', 'alınmadı'
@@ -35,22 +37,38 @@ class _AttendancePageState extends State<AttendancePage> {
     _targetStudentId = widget.studentId ?? FirebaseAuth.instance.currentUser!.uid;
   }
 
-  // GÜNCELLENDİ: Seçilen günün yoklama verilerini ve etüt saatlerini birleştiren fonksiyon
+  // ### BU FONKSİYON TAMAMEN YENİLENDİ ###
+  // Artık öğrencinin sınıf programına göre yoklama verilerini çekiyor.
   Future<List<AttendanceStatus>> _getAttendanceForDate(DateTime date) async {
-    // 1. Adım: O gün için geçerli etüt saatlerini çek
-    final settingsDoc = await _firestore.collection('settings').doc('schedule_times').get();
-    List<String> studySlots = [];
-    if (settingsDoc.exists) {
-      final data = settingsDoc.data()!;
-      final isSaturday = date.weekday == DateTime.saturday;
-      studySlots = List<String>.from(isSaturday ? data['saturdayTimes'] ?? [] : data['weekdayTimes'] ?? []);
+    // 1. Adım: Öğrencinin sınıfını ve aktif programını bul
+    final userDoc = await _firestore.collection('users').doc(_targetStudentId).get();
+    final classId = userDoc.data()?['class'] as String?;
+
+    if (classId == null || classId.isEmpty) {
+      return []; // Öğrenci bir sınıfa atanmamışsa boş liste döndür
     }
 
+    final classDoc = await _firestore.collection('classes').doc(classId).get();
+    final activeTimetableId = classDoc.data()?['activeTimetableId'] as String?;
+
+    if (activeTimetableId == null || activeTimetableId.isEmpty) {
+      return []; // Sınıfa program atanmamışsa boş liste döndür
+    }
+
+    final templateDoc = await _firestore.collection('schedule_templates').doc(activeTimetableId).get();
+    if (!templateDoc.exists) return [];
+
+    final timetable = templateDoc.data()?['timetable'] as Map<String, dynamic>? ?? {};
+    final dayName = _getDayNameInTurkish(date.weekday);
+
+    // 2. Adım: O gün için geçerli etüt saatlerini şablondan çek
+    final List<String> studySlots = List<String>.from(timetable[dayName] ?? []);
     if (studySlots.isEmpty) {
       return []; // O gün için etüt ayarlanmamışsa boş liste döndür
     }
+    studySlots.sort(); // Saatleri sırala
 
-    // 2. Adım: Öğrencinin o güne ait tüm yoklama kayıtlarını çek
+    // 3. Adım: Öğrencinin o güne ait tüm yoklama kayıtlarını çek
     final formattedDate = DateFormat('yyyy-MM-dd').format(date);
     final querySnapshot = await _firestore
         .collection('attendance')
@@ -58,25 +76,31 @@ class _AttendancePageState extends State<AttendancePage> {
         .where('date', isEqualTo: formattedDate)
         .get();
 
-    // Yoklama kayıtlarını kolay erişim için bir haritaya dönüştür (session -> status)
     final Map<String, String> attendanceRecords = {
       for (var doc in querySnapshot.docs) doc.data()['session']: doc.data()['status']
     };
 
-    // 3. Adım: Etüt saatlerini ve yoklama kayıtlarını birleştir
+    // 4. Adım: Etüt saatlerini ve yoklama kayıtlarını birleştir
     final List<AttendanceStatus> dailyAttendance = [];
     for (var slot in studySlots) {
       dailyAttendance.add(AttendanceStatus(
         timeSlot: slot,
-        status: attendanceRecords[slot] ?? 'alınmadı', // Kayıt yoksa 'alınmadı' olarak işaretle
+        status: attendanceRecords[slot] ?? 'alınmadı',
       ));
     }
 
     return dailyAttendance;
   }
 
+  String _getDayNameInTurkish(int weekday) {
+    const days = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar'];
+    return days[weekday - 1];
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Arayüz kodunda bir değişiklik yok, sadece _getAttendanceForDate fonksiyonu değişti.
+    // ... Geri kalan build metodu ve diğer widget'lar aynı kalabilir ...
     final primaryColor = Theme.of(context).colorScheme.primary;
     final secondaryColor = Theme.of(context).colorScheme.secondary;
 
@@ -138,7 +162,6 @@ class _AttendancePageState extends State<AttendancePage> {
     );
   }
 
-  // GÜNCELLENDİ: Artık yeni sisteme göre yoklama detaylarını gösteriyor
   Widget _buildDailyAttendanceDetails(DateTime date) {
     return FutureBuilder<List<AttendanceStatus>>(
       future: _getAttendanceForDate(date),
@@ -150,7 +173,7 @@ class _AttendancePageState extends State<AttendancePage> {
           return Center(child: Text('Veri yüklenemedi: ${snapshot.error}', style: GoogleFonts.poppins()));
         }
         if (!snapshot.hasData || snapshot.data!.isEmpty) {
-          return Center(child: Text('Bu tarih için ayarlanmış etüt yok.', style: GoogleFonts.poppins()));
+          return Center(child: Text('Bu tarih için programınızda etüt bulunmuyor.', style: GoogleFonts.poppins()));
         }
 
         final attendanceList = snapshot.data!;
@@ -187,7 +210,6 @@ class _AttendancePageState extends State<AttendancePage> {
     );
   }
 
-  // GÜNCELLENDİ: Yoklama durumuna göre ikon ve renk belirleyen widget
   Widget _buildAttendanceRow(String timeSlot, String status) {
     IconData icon;
     Color color;

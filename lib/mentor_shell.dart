@@ -1,9 +1,12 @@
+// lib/mentor_shell.dart
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:metabilim/pages/mentor/student_list_page.dart';
 import 'package:metabilim/pages/mentor/book_list_page.dart';
 import 'package:metabilim/pages/mentor/check_homework_page.dart';
-import 'package:metabilim/pages/mentor/take_attendance_page.dart';
+// ESKİ SAYFAYI SİLİP, YENİ AKIŞIN BAŞLANGIÇ SAYFASINI IMPORT EDİYORUZ
+import 'package:metabilim/pages/mentor/attendance_class_list_page.dart';
 import 'package:metabilim/pages/mentor/profile_page.dart';
 
 class MentorShell extends StatefulWidget {
@@ -16,12 +19,11 @@ class MentorShell extends StatefulWidget {
 class _MentorShellState extends State<MentorShell> {
   int _selectedIndex = 0;
 
-  // Alt barda basıldığında gösterilecek sayfaların listesi
   static const List<Widget> _pages = <Widget>[
-    StudentListPage(),      // Ana Sayfa -> Öğrenci Listesi
-    BookListPage(),         // Kitap Listesi
-    CheckHomeworkPage(),     // Ödev Verme
-    TakeAttendancePage(),   // Yoklama Alma
+    StudentListPage(),
+    BookListPage(),
+    CheckHomeworkPage(),
+    AttendanceClassListPage(), // ESKİ SAYFAYI YENİSİYLE DEĞİŞTİRDİK
   ];
 
   void _onItemTapped(int index) {
@@ -57,7 +59,7 @@ class _MentorShellState extends State<MentorShell> {
         onTap: _onItemTapped,
         selectedItemColor: Theme.of(context).colorScheme.primary,
         unselectedItemColor: Colors.grey,
-        type: BottomNavigationBarType.fixed, // 4 eleman için en iyi görünüm
+        type: BottomNavigationBarType.fixed,
       ),
     );
   }
