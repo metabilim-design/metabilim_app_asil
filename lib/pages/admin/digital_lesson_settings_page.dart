@@ -1,7 +1,10 @@
+// lib/pages/admin/digital_lesson_settings_page.dart
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:metabilim/pages/admin/computer_schedule_page.dart'; // Yeni oluşturacağımız sayfa
+import 'package:metabilim/models/user_model.dart';
+import 'computer_schedule_page.dart'; // YENİ OLUŞTURACAĞIMIZ SAYFAYA YÖNLENDİRECEK
 
 class DigitalLessonSettingsPage extends StatefulWidget {
   const DigitalLessonSettingsPage({super.key});
@@ -11,111 +14,87 @@ class DigitalLessonSettingsPage extends StatefulWidget {
 }
 
 class _DigitalLessonSettingsPageState extends State<DigitalLessonSettingsPage> {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-
-  void _showAddComputerDialog() {
-    final computerNameController = TextEditingController();
-    final formKey = GlobalKey<FormState>();
-
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text("Yeni Bilgisayar Ekle", style: GoogleFonts.poppins()),
-          content: Form(
-            key: formKey,
-            child: TextFormField(
-              controller: computerNameController,
-              decoration: const InputDecoration(labelText: 'Bilgisayar Adı (Örn: Bilgisayar 1)'),
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Bilgisayar adı boş olamaz.';
-                }
-                return null;
-              },
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('İptal'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                if (formKey.currentState!.validate()) {
-                  final name = computerNameController.text.trim();
-                  // Yeni bilgisayarı 'computers' koleksiyonuna ekle
-                  await _firestore.collection('computers').add({'name': name, 'createdAt': FieldValue.serverTimestamp()});
-                  // Aynı anda bu bilgisayar için boş bir dijital program belgesi oluştur
-                  await _firestore.collection('digital_schedules').doc(name).set({'computerName': name});
-
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('"$name" başarıyla eklendi.'), backgroundColor: Colors.green),
-                  );
-                }
-              },
-              child: const Text('Ekle'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: StreamBuilder<QuerySnapshot>(
-        stream: _firestore.collection('computers').orderBy('createdAt').snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
+        // Sınıfları çekiyoruz
+        stream: FirebaseFirestore.instance.collection('classes').orderBy('className').snapshots(),
+        builder: (context, classSnapshot) {
+          if (classSnapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return const Center(child: Text('Sistemde kayıtlı bilgisayar yok.'));
-          }
-          if (snapshot.hasError) {
-            return const Center(child: Text('Bilgisayarlar yüklenemedi.'));
+          if (!classSnapshot.hasData || classSnapshot.data!.docs.isEmpty) {
+            return const Center(child: Text('Sistemde kayıtlı sınıf bulunmuyor.'));
           }
 
-          final computers = snapshot.data!.docs;
+          final classes = classSnapshot.data!.docs;
 
           return ListView.builder(
             padding: const EdgeInsets.all(8.0),
-            itemCount: computers.length,
+            itemCount: classes.length,
             itemBuilder: (context, index) {
-              final computerDoc = computers[index];
-              final computerData = computerDoc.data() as Map<String, dynamic>;
-              final computerName = computerData['name'] ?? 'İsimsiz';
+              final classDoc = classes[index];
+              final className = (classDoc.data() as Map<String, dynamic>)['className'] ?? 'İsimsiz Sınıf';
 
+              // Her sınıf için bir ExpansionTile (açılır-kapanır menü)
               return Card(
                 margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                child: ListTile(
-                  leading: const Icon(Icons.computer, size: 40),
-                  title: Text(computerName, style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
-                  subtitle: const Text('Haftalık programı düzenlemek için dokunun'),
-                  trailing: const Icon(Icons.arrow_forward_ios),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        // Bilgisayarın adını (ID'si olarak kullanıyoruz) detay sayfasına gönder
-                        builder: (context) => ComputerSchedulePage(computerId: computerDoc.id, computerName: computerName),
-                      ),
-                    );
-                  },
+                child: ExpansionTile(
+                  leading: const Icon(Icons.class_, size: 40),
+                  title: Text(className, style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
+                  subtitle: const Text('Öğrencileri görmek için dokunun'),
+                  children: [
+                    _buildStudentListOfClass(classDoc.id)
+                  ],
                 ),
               );
             },
           );
         },
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showAddComputerDialog,
-        label: const Text('Yeni Bilgisayar Ekle'),
-        icon: const Icon(Icons.add),
-      ),
+    );
+  }
+
+  // Sınıfa tıklandığında o sınıftaki öğrencileri listeleyen widget
+  Widget _buildStudentListOfClass(String classId) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('users')
+          .where('role', isEqualTo: 'Ogrenci')
+          .where('class', isEqualTo: classId)
+          .snapshots(),
+      builder: (context, studentSnapshot) {
+        if (studentSnapshot.connectionState == ConnectionState.waiting) {
+          return const Padding(padding: EdgeInsets.all(8.0), child: LinearProgressIndicator());
+        }
+        if (!studentSnapshot.hasData || studentSnapshot.data!.docs.isEmpty) {
+          return const ListTile(title: Text('Bu sınıfta öğrenci bulunmuyor.'));
+        }
+
+        final students = studentSnapshot.data!.docs;
+
+        return Column(
+          children: students.map((doc) {
+            final student = AppUser.fromMap(doc.data() as Map<String, dynamic>, doc.id);
+            return ListTile(
+              leading: const Icon(Icons.person_outline),
+              title: Text('${student.name} ${student.surname}'),
+              subtitle: Text('Okul No: ${student.schoolNumber ?? 'N/A'}'),
+              trailing: const Icon(Icons.arrow_forward_ios),
+              onTap: () {
+                // Öğrenciye tıklandığında YENİ atama sayfasına yönlendir
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ComputerSchedulePage(student: student),
+                  ),
+                );
+              },
+            );
+          }).toList(),
+        );
+      },
     );
   }
 }

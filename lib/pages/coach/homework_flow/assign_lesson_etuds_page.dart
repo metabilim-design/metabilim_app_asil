@@ -1,5 +1,8 @@
+// lib/pages/coach/homework_flow/assign_lesson_etuds_page.dart
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 import 'package:metabilim/models/user_model.dart';
 import 'package:metabilim/pages/coach/homework_flow/preview_schedule_page.dart';
 
@@ -52,6 +55,7 @@ class _AssignLessonEtudsPageState extends State<AssignLessonEtudsPage> with Tick
     return total;
   }
 
+  // ### DİJİTAL ETÜT HESAPLAMA MANTIĞI TAMAMEN YENİLENDİ ###
   Future<void> _calculateEtudsFromStudentSchedule() async {
     setState(() {
       _isLoading = true;
@@ -61,42 +65,63 @@ class _AssignLessonEtudsPageState extends State<AssignLessonEtudsPage> with Tick
     try {
       final firestore = FirebaseFirestore.instance;
 
+      // 1. Adım: Sınıf programını çek
       if (widget.student.classId == null || widget.student.classId!.isEmpty) {
         throw Exception('Bu öğrenci herhangi bir sınıfa atanmamış. Lütfen önce sınıf ataması yapın.');
       }
-
       final classDoc = await firestore.collection('classes').doc(widget.student.classId).get();
       if (!classDoc.exists) {
         throw Exception('Öğrencinin atandığı sınıf (${widget.student.classId}) sistemde bulunamadı.');
       }
-
       final activeTimetableId = classDoc.data()?['activeTimetableId'] as String?;
       if (activeTimetableId == null || activeTimetableId.isEmpty) {
         throw Exception('Bu sınıfa henüz bir etüt programı şablonu atanmamış.');
       }
-
       final templateDoc = await firestore.collection('schedule_templates').doc(activeTimetableId).get();
       if (!templateDoc.exists) {
         throw Exception('Sınıfa atanan program şablonu bulunamadı. Silinmiş olabilir.');
       }
-
       final timetable = templateDoc.data()?['timetable'] as Map<String, dynamic>? ?? {};
 
+      // 2. Adım: TOPLAM etüt sayısını hesapla
       int calculatedTotal = 0;
       for (var day = widget.startDate; day.isBefore(widget.endDate.add(const Duration(days: 1))); day = day.add(const Duration(days: 1))) {
-        String dayName = _getDayNameInTurkish(day.weekday); // Örn: "Pazartesi"
-
-        // ### HATA BURADAYDI VE DÜZELTİLDİ! ###
-        // '.toLowerCase()' kaldırıldı. Artık "Pazartesi" anahtarını arayacak.
+        String dayName = _getDayNameInTurkish(day.weekday);
         if (timetable.containsKey(dayName)) {
           calculatedTotal += (timetable[dayName] as List).length;
+        }
+      }
+
+      // 3. Adım: Önce öğrencinin haftalık dijital programını çıkar
+      // Örn: {'Pazartesi': 1, 'Cuma': 2} -> Pazartesi 1, Cuma 2 dijital etüdü var
+      final Map<String, int> studentWeeklyDigitalSchedule = {};
+      final digitalSchedulesSnapshot = await firestore.collection('digital_schedules').get();
+      for (var computerDoc in digitalSchedulesSnapshot.docs) {
+        final scheduleMap = computerDoc.data()['schedule'] as Map<String, dynamic>? ?? {};
+        scheduleMap.forEach((dayName, timeSlots) {
+          (timeSlots as Map<String, dynamic>).forEach((timeSlot, studentId) {
+            if (studentId == widget.student.uid) {
+              studentWeeklyDigitalSchedule.update(dayName, (value) => value + 1, ifAbsent: () => 1);
+            }
+          });
+        });
+      }
+
+      // 4. Adım: Şimdi tarih aralığını gün gün gezerek DİJİTAL etüt sayısını doğru hesapla
+      int calculatedDigital = 0;
+      if (studentWeeklyDigitalSchedule.isNotEmpty) {
+        for (var date = widget.startDate; date.isBefore(widget.endDate.add(const Duration(days: 1))); date = date.add(const Duration(days: 1))) {
+          String dayName = _getDayNameInTurkish(date.weekday);
+          if (studentWeeklyDigitalSchedule.containsKey(dayName)) {
+            calculatedDigital += studentWeeklyDigitalSchedule[dayName]!;
+          }
         }
       }
 
       if (mounted) {
         setState(() {
           _totalEtuds = calculatedTotal;
-          _digitalEtuds = 0;
+          _digitalEtuds = calculatedDigital;
         });
       }
 
@@ -126,7 +151,8 @@ class _AssignLessonEtudsPageState extends State<AssignLessonEtudsPage> with Tick
 
   @override
   Widget build(BuildContext context) {
-    int remainingEtuds = _totalEtuds - _assignedEtuds;
+    int assignableEtuds = _totalEtuds - _digitalEtuds;
+    int remainingEtuds = assignableEtuds - _assignedEtuds;
     bool canProceed = _assignedEtuds > 0 && _errorMessage == null;
 
     return Scaffold(
@@ -155,22 +181,37 @@ class _AssignLessonEtudsPageState extends State<AssignLessonEtudsPage> with Tick
           Padding(
             padding: const EdgeInsets.all(16.0),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.5),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Theme.of(context).colorScheme.primary),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('Kalan / Toplam Etüt', style: TextStyle(fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onPrimaryContainer)),
-                  Text(
-                    '$remainingEtuds / $_totalEtuds',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Theme.of(context).colorScheme.primary),
-                  ),
-                ],
-              ),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.5),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Theme.of(context).colorScheme.primary),
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Atanabilir Etüt (Kalan/Toplam)', style: TextStyle(fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onPrimaryContainer)),
+                        Text(
+                          '$remainingEtuds / $assignableEtuds',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Theme.of(context).colorScheme.primary),
+                        ),
+                      ],
+                    ),
+                    const Divider(height: 15),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Dijital Etüt (Atanmış)', style: TextStyle(color: Theme.of(context).colorScheme.onPrimaryContainer)),
+                        Text(
+                          '$_digitalEtuds',
+                          style: const TextStyle(fontSize: 16, color: Colors.teal, fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                  ],
+                )
             ),
           ),
           Expanded(

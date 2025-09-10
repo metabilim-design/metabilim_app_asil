@@ -1,12 +1,17 @@
+// lib/pages/admin/computer_schedule_page.dart
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:metabilim/models/user_model.dart';
+import 'package:collection/collection.dart'; // for firstWhereOrNull
 
 class ComputerSchedulePage extends StatefulWidget {
-  final String computerId;
-  final String computerName;
+  // DİKKAT: Artık bu sayfa direkt AppUser modelini alıyor.
+  // Bu değişikliği önceki adımdaki digital_lesson_settings_page.dart dosyasında yapmıştık.
+  final AppUser student;
 
-  const ComputerSchedulePage({super.key, required this.computerId, required this.computerName});
+  const ComputerSchedulePage({super.key, required this.student});
 
   @override
   State<ComputerSchedulePage> createState() => _ComputerSchedulePageState();
@@ -15,9 +20,13 @@ class ComputerSchedulePage extends StatefulWidget {
 class _ComputerSchedulePageState extends State<ComputerSchedulePage> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final List<String> _daysOfWeek = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar'];
-  Map<String, List<String>> _studySlots = {};
-  Map<String, DocumentSnapshot> _allStudents = {};
   bool _isLoading = true;
+
+  Map<String, List<String>> _studentTimetable = {}; // Öğrencinin sınıfının programı
+  List<DocumentSnapshot> _computers = []; // Mevcut tüm bilgisayarlar
+
+  // Örn: {'Bilgisayar 1': {'Pazartesi_09:00-09:40': 'ogrenciId123'}}
+  Map<String, Map<String, String>> _allDigitalAssignments = {};
 
   @override
   void initState() {
@@ -27,82 +36,78 @@ class _ComputerSchedulePageState extends State<ComputerSchedulePage> with Single
   }
 
   Future<void> _loadInitialData() async {
-    // Tüm öğrencileri ve etüt saatlerini başta bir kere çekelim
-    final studentsSnapshot = await FirebaseFirestore.instance.collection('users').where('role', isEqualTo: 'Ogrenci').get();
-    final scheduleSettingsDoc = await FirebaseFirestore.instance.collection('settings').doc('schedule_times').get();
+    setState(() => _isLoading = true);
+    try {
+      final firestore = FirebaseFirestore.instance;
 
-    if (mounted) {
-      setState(() {
-        _allStudents = {for (var doc in studentsSnapshot.docs) doc.id: doc};
-        if (scheduleSettingsDoc.exists) {
-          final data = scheduleSettingsDoc.data()!;
-          _studySlots = { for (var day in _daysOfWeek) day: List<String>.from(data[day] ?? []) };
+      // 1. Tüm bilgisayarları çek
+      final computersSnapshot = await firestore.collection('computers').orderBy('name').get();
+      _computers = computersSnapshot.docs;
+
+      // 2. Öğrencinin sınıf programını çek
+      if (widget.student.classId != null && widget.student.classId!.isNotEmpty) {
+        final classDoc = await firestore.collection('classes').doc(widget.student.classId).get();
+        final templateId = classDoc.data()?['activeTimetableId'];
+        if (templateId != null) {
+          final templateDoc = await firestore.collection('schedule_templates').doc(templateId).get();
+          final timetableData = templateDoc.data()?['timetable'] as Map<String, dynamic>? ?? {};
+          _studentTimetable = timetableData.map((key, value) => MapEntry(key, List<String>.from(value)));
         }
-        _isLoading = false;
+      }
+
+      // 3. Tüm dijital etüt atamalarını çek
+      _allDigitalAssignments.clear(); // Haritayı temizle
+      final digitalSchedulesSnapshot = await firestore.collection('digital_schedules').get();
+      for (var doc in digitalSchedulesSnapshot.docs) {
+        final computerName = doc.id; // Döküman ID'si bilgisayarın adıdır
+        final schedule = doc.data()['schedule'] as Map<String, dynamic>? ?? {};
+        _allDigitalAssignments[computerName] = {};
+        schedule.forEach((day, slots) {
+          (slots as Map<String, dynamic>).forEach((timeSlot, studentId) {
+            _allDigitalAssignments[computerName]!['${day}_$timeSlot'] = studentId;
+          });
+        });
+      }
+    } catch (e) {
+      print("Veri yüklenirken hata: $e");
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _assignStudentToComputer(String day, String timeSlot, String computerName) async {
+    final firestore = FirebaseFirestore.instance;
+    WriteBatch batch = firestore.batch();
+
+    // Bu öğrencinin bu saatteki mevcut tüm atamalarını sil (başka bir PC'deyse)
+    for (var computerDoc in _computers) {
+      final name = (computerDoc.data() as Map<String, dynamic>)['name'];
+      batch.update(firestore.collection('digital_schedules').doc(name), {
+        'schedule.$day.$timeSlot': FieldValue.delete(),
       });
     }
-  }
 
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
-
-  // Öğrenci seçme dialoğunu gösterir
-  Future<void> _showStudentSelectionDialog(String day, String timeSlot) async {
-    String? selectedStudentId;
-
-    await showDialog(
-        context: context,
-        builder: (context) {
-          return AlertDialog(
-            title: Text('$timeSlot için Öğrenci Seç'),
-            content: SizedBox(
-              width: double.maxFinite,
-              child: ListView(
-                shrinkWrap: true,
-                children: _allStudents.values.map((doc) {
-                  final student = doc.data() as Map<String, dynamic>;
-                  return ListTile(
-                    title: Text('${student['name']} ${student['surname']}'),
-                    onTap: () {
-                      selectedStudentId = doc.id;
-                      Navigator.pop(context);
-                    },
-                  );
-                }).toList(),
-              ),
-            ),
-            actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('İptal'))],
-          );
-        });
-
-    if (selectedStudentId != null) {
-      // Seçim yapıldıysa veritabanını güncelle
-      await FirebaseFirestore.instance.collection('digital_schedules').doc(widget.computerName).set({
-        'schedule': {
-          day: {timeSlot: selectedStudentId}
-        }
-      }, SetOptions(merge: true)); // merge:true ile belgenin tamamını silmeden sadece ilgili alanı güncelleriz
-    }
-  }
-
-  // Atamayı kaldırma
-  Future<void> _removeAssignment(String day, String timeSlot) async {
-    await FirebaseFirestore.instance.collection('digital_schedules').doc(widget.computerName).set({
-      'schedule': {
-        day: {timeSlot: FieldValue.delete()} // Sadece o saat dilimini siler
-      }
+    // Yeni atamayı yap
+    batch.set(firestore.collection('digital_schedules').doc(computerName), {
+      'schedule': { day: { timeSlot: widget.student.uid } }
     }, SetOptions(merge: true));
+
+    await batch.commit();
+    _loadInitialData(); // Arayüzü güncelle
   }
 
+  Future<void> _removeAssignment(String day, String timeSlot, String computerName) async {
+    await FirebaseFirestore.instance.collection('digital_schedules').doc(computerName).update({
+      'schedule.$day.$timeSlot': FieldValue.delete(),
+    });
+    _loadInitialData(); // Arayüzü güncelle
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('${widget.computerName} Programı'),
+        title: Text('${widget.student.name} - Dijital Etüt Ata', style: GoogleFonts.poppins()),
         bottom: TabBar(
           controller: _tabController,
           isScrollable: true,
@@ -119,47 +124,58 @@ class _ComputerSchedulePageState extends State<ComputerSchedulePage> with Single
   }
 
   Widget _buildDaySchedule(String day) {
-    final slotsForDay = _studySlots[day] ?? [];
+    // DİKKAT: Veritabanındaki gün isimleri büyük harfle başladığı için,
+    // öğrencinin programını çekerken de büyük harfle arama yapıyoruz.
+    final slotsForDay = _studentTimetable[day] ?? [];
     if (slotsForDay.isEmpty) {
-      return Center(child: Text('$day için etüt saati tanımlanmamış.'));
+      return Center(child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Text('$day için öğrencinin programında etüt saati yok.', textAlign: TextAlign.center, style: GoogleFonts.poppins()),
+      ));
     }
 
-    return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance.collection('digital_schedules').doc(widget.computerName).snapshots(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+    return ListView.builder(
+      itemCount: slotsForDay.length,
+      itemBuilder: (context, index) {
+        final timeSlot = slotsForDay[index];
+        final uniqueKey = '${day}_$timeSlot';
 
-        final scheduleData = snapshot.data?.data() as Map<String, dynamic>? ?? {};
-        final daySchedule = (scheduleData['schedule'] as Map<String, dynamic>?)?[day] as Map<String, dynamic>? ?? {};
+        // Bu öğrencinin bu saatte bir ataması var mı, varsa hangi bilgisayarda?
+        final currentAssignment = _allDigitalAssignments.entries
+            .firstWhereOrNull((entry) => entry.value[uniqueKey] == widget.student.uid);
 
-        return ListView.builder(
-          itemCount: slotsForDay.length,
-          itemBuilder: (context, index) {
-            final timeSlot = slotsForDay[index];
-            final studentId = daySchedule[timeSlot];
-            final studentDoc = _allStudents[studentId];
-            final studentName = studentDoc != null ? '${studentDoc['name']} ${studentDoc['surname']}' : 'Boş';
+        return Card(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: ExpansionTile(
+            title: Text(timeSlot, style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
+            subtitle: Text(
+              currentAssignment != null ? 'Atandı: ${currentAssignment.key}' : 'Atama yapılmadı',
+              style: GoogleFonts.poppins(color: currentAssignment != null ? Colors.green.shade700 : Colors.red.shade700),
+            ),
+            trailing: currentAssignment != null ?
+            IconButton(icon: const Icon(Icons.close), onPressed: () => _removeAssignment(day, timeSlot, currentAssignment.key), tooltip: "Atamayı Kaldır",)
+                : const Icon(Icons.keyboard_arrow_down),
+            children: _computers.map((computer) {
+              final computerData = computer.data() as Map<String, dynamic>;
+              final computerName = computerData['name'] ?? computer.id;
 
-            return ListTile(
-              title: Text(timeSlot, style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
-              subtitle: Text(studentName, style: TextStyle(color: studentDoc != null ? Colors.black : Colors.grey)),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (studentDoc != null)
-                    IconButton(
-                      icon: const Icon(Icons.close, color: Colors.redAccent),
-                      onPressed: () => _removeAssignment(day, timeSlot),
-                      tooltip: 'Atamayı Kaldır',
-                    ),
-                  ElevatedButton(
-                    onPressed: () => _showStudentSelectionDialog(day, timeSlot),
-                    child: Text(studentDoc != null ? 'Değiştir' : 'Ata'),
+              final assignedStudentId = _allDigitalAssignments[computerName]?[uniqueKey];
+              final bool isOccupied = assignedStudentId != null;
+              final bool isThisStudent = assignedStudentId == widget.student.uid;
+
+              return ListTile(
+                title: Text(computerName, style: GoogleFonts.poppins()), // DÜZELTME: ID yerine İSİM gösteriliyor
+                trailing: ElevatedButton(
+                  onPressed: (isOccupied && !isThisStudent) ? null : () => _assignStudentToComputer(day, timeSlot, computerName),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: isThisStudent ? Colors.green : Theme.of(context).primaryColor,
+                    foregroundColor: Colors.white,
                   ),
-                ],
-              ),
-            );
-          },
+                  child: Text(isThisStudent ? 'Atandı' : (isOccupied ? 'Dolu' : 'Ata')),
+                ),
+              );
+            }).toList(),
+          ),
         );
       },
     );

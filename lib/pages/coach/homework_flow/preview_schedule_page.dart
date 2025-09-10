@@ -1,9 +1,12 @@
+// lib/pages/coach/homework_flow/preview_schedule_page.dart
+
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:metabilim/models/user_model.dart';
 import 'package:metabilim/pages/coach/homework_flow/select_materials_page.dart';
+import 'package:collection/collection.dart';
 
 class EtudSlot {
   final DateTime dateTime;
@@ -11,7 +14,7 @@ class EtudSlot {
   String? lessonType;
   final bool isDigital;
   EtudSlot({ required this.dateTime, this.lessonName, this.lessonType, this.isDigital = false, });
-  String get fullLessonName => lessonType != null ? '$lessonType $lessonName' : lessonName ?? 'Boş Etüt';
+  String get fullLessonName => lessonType != null ? '$lessonType $lessonName' : lessonName ?? (isDigital ? 'Dijital Etüt' : 'Boş Etüt');
 }
 
 class PreviewSchedulePage extends StatefulWidget {
@@ -38,54 +41,83 @@ class _PreviewSchedulePageState extends State<PreviewSchedulePage> {
   @override
   void initState() { super.initState(); _generateSchedule(); }
 
+  // ### DİJİTAL ETÜT MANTIĞI TAMAMEN YENİLENDİ ###
   Future<void> _generateSchedule() async {
     setState(() { _isLoading = true; _infoMessage = null; });
     try {
       final firestore = FirebaseFirestore.instance;
       List<EtudSlot> allSlots = [];
 
+      // 1. Adım: Sınıfın program şablonunu çek
       if (widget.student.classId == null || widget.student.classId!.isEmpty) {
         throw Exception('Bu öğrenci herhangi bir sınıfa atanmamış.');
       }
       final classDoc = await firestore.collection('classes').doc(widget.student.classId).get();
       if (!classDoc.exists) throw Exception('Öğrencinin sınıfı bulunamadı.');
-
       final activeTimetableId = classDoc.data()?['activeTimetableId'] as String?;
       if (activeTimetableId == null || activeTimetableId.isEmpty) {
         throw Exception('Bu sınıfa bir etüt programı atanmamış.');
       }
-
       final templateDoc = await firestore.collection('schedule_templates').doc(activeTimetableId).get();
       if (!templateDoc.exists) throw Exception('Atanan program şablonu bulunamadı.');
-
       final timetable = templateDoc.data()?['timetable'] as Map<String, dynamic>? ?? {};
 
+      // 2. Adım: Tarih aralığındaki tüm normal etüt saatlerini oluştur
       for (var day = widget.startDate; day.isBefore(widget.endDate.add(const Duration(days: 1))); day = day.add(const Duration(days: 1))) {
         String dayName = _getDayNameInTurkish(day.weekday);
-
-        // ### HATA BURADAYDI VE DÜZELTİLDİ! ###
-        // '.toLowerCase()' kaldırıldı. Artık "Pazartesi" anahtarını doğru şekilde bulacak.
         final slotsForDay = timetable[dayName] as List<dynamic>? ?? [];
-
         for (var timeEntry in slotsForDay) {
           try {
             String startTime = timeEntry.toString().split('-')[0].trim();
             final parts = startTime.split(':');
             if (parts.length == 2) {
               allSlots.add(EtudSlot(
-                  dateTime: DateTime(day.year, day.month, day.day, int.parse(parts[0]), int.parse(parts[1])),
-                  isDigital: false
+                  dateTime: DateTime(day.year, day.month, day.day, int.parse(parts[0]), int.parse(parts[1]))
               ));
             }
           } catch (e) { print('Hatalı zaman formatı atlanıyor: "$timeEntry"'); }
         }
       }
 
+      // 3. Adım: Öğrencinin haftalık sabit dijital programını çıkar
+      // Örn: {'Pazartesi': ['09:00-09:40'], 'Çarşamba': ['09:50-10:30']}
+      final Map<String, List<String>> studentWeeklyDigitalSchedule = {};
+      final digitalSchedulesSnapshot = await firestore.collection('digital_schedules').get();
+      for (var computerDoc in digitalSchedulesSnapshot.docs) {
+        final scheduleMap = computerDoc.data()['schedule'] as Map<String, dynamic>? ?? {};
+        scheduleMap.forEach((dayName, timeSlots) {
+          (timeSlots as Map<String, dynamic>).forEach((timeSlot, studentId) {
+            if (studentId == widget.student.uid) {
+              studentWeeklyDigitalSchedule.putIfAbsent(dayName, () => []).add(timeSlot);
+            }
+          });
+        });
+      }
+
+      // 4. Adım: Normal etüt listesini gez, dijital olanları işaretle
+      // Yeni bir liste oluşturarak karışıklığı önlüyoruz.
+      List<EtudSlot> updatedSlots = [];
+      for (var slot in allSlots) {
+        String dayName = _getDayNameInTurkish(slot.dateTime.weekday);
+        String time = DateFormat('HH:mm').format(slot.dateTime);
+
+        final digitalSlotsForDay = studentWeeklyDigitalSchedule[dayName] ?? [];
+        final isDigitalMatch = digitalSlotsForDay.any((digitalTimeSlot) => digitalTimeSlot.startsWith(time));
+
+        if (isDigitalMatch) {
+          updatedSlots.add(EtudSlot(dateTime: slot.dateTime, isDigital: true, lessonName: 'Dijital Etüt'));
+        } else {
+          updatedSlots.add(slot);
+        }
+      }
+      allSlots = updatedSlots; // Eski listeyi güncel olanla değiştir
+
       if (allSlots.isEmpty) {
         if(mounted) setState(() { _infoMessage = 'Seçilen tarih aralığı için bu sınıfın programında etüt saati bulunamadı.'; _isLoading = false; });
         return;
       }
 
+      // 5. Adım: Kalan normal etütlere dersleri dağıt
       allSlots.sort((a, b) => a.dateTime.compareTo(b.dateTime));
       List<List<String>> lessonsToPlace = [];
       widget.tytLessons.forEach((lesson, count) { for (int i = 0; i < count; i++) lessonsToPlace.add(['TYT', lesson]); });
@@ -93,18 +125,26 @@ class _PreviewSchedulePageState extends State<PreviewSchedulePage> {
       lessonsToPlace.shuffle(Random());
       int lessonIndex = 0;
       for (var slot in allSlots) {
-        if (!slot.isDigital && lessonIndex < lessonsToPlace.length) {
-          slot.lessonType = lessonsToPlace[lessonIndex][0];
-          slot.lessonName = lessonsToPlace[lessonIndex][1];
-          lessonIndex++;
+        if (!slot.isDigital) {
+          if (lessonIndex < lessonsToPlace.length) {
+            slot.lessonType = lessonsToPlace[lessonIndex][0];
+            slot.lessonName = lessonsToPlace[lessonIndex][1];
+            lessonIndex++;
+          } else {
+            slot.lessonName = 'Boş Etüt';
+          }
         }
       }
 
+      // 6. Adım: Günlere göre grupla
       Map<DateTime, List<EtudSlot>> groupedSchedule = {};
       for (var slot in allSlots) {
         final dateOnly = DateTime(slot.dateTime.year, slot.dateTime.month, slot.dateTime.day);
         groupedSchedule.putIfAbsent(dateOnly, () => []).add(slot);
       }
+      groupedSchedule.forEach((key, value) {
+        value.sort((a,b) => a.dateTime.compareTo(b.dateTime));
+      });
 
       if(mounted) setState(() { _schedule = groupedSchedule; });
 
@@ -116,12 +156,14 @@ class _PreviewSchedulePageState extends State<PreviewSchedulePage> {
     }
   }
 
+  // Geri kalan fonksiyonlar aynı, dokunulmadı...
+
   void _handleSwap(EtudSlot clickedSlot) {
-    if (clickedSlot.isDigital || clickedSlot.lessonName == null) return;
+    if (clickedSlot.isDigital || clickedSlot.lessonName == null || clickedSlot.lessonName == 'Boş Etüt') return;
     if (_selectedForSwap == null) {
       setState(() => _selectedForSwap = clickedSlot);
     } else {
-      if (_selectedForSwap != clickedSlot) {
+      if (_selectedForSwap != clickedSlot && !_selectedForSwap!.isDigital) {
         final tempLessonName = _selectedForSwap!.lessonName;
         final tempLessonType = _selectedForSwap!.lessonType;
         setState(() {
@@ -142,7 +184,7 @@ class _PreviewSchedulePageState extends State<PreviewSchedulePage> {
 
   @override
   Widget build(BuildContext context) {
-    final scheduleDays = _schedule.keys.toList();
+    final scheduleDays = _schedule.keys.toList()..sort();
     return Scaffold(
       appBar: AppBar(title: const Text('Program Önizleme')),
       body: _isLoading
@@ -175,17 +217,19 @@ class _PreviewSchedulePageState extends State<PreviewSchedulePage> {
                   itemBuilder: (context, slotIndex) {
                     final slot = slots[slotIndex];
                     final isSelectedForSwap = _selectedForSwap == slot;
-                    final Color? lessonColor = slot.lessonType == 'TYT' ? Colors.blue.shade100 : slot.lessonType == 'AYT' ? Colors.orange.shade100 : null;
+                    final Color? lessonColor = slot.isDigital
+                        ? Colors.teal.shade100
+                        : (slot.lessonType == 'TYT' ? Colors.blue.shade100 : slot.lessonType == 'AYT' ? Colors.orange.shade100 : Colors.grey.shade200);
                     return Card(
                       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                      color: isSelectedForSwap ? Colors.amber.withOpacity(0.3) : (slot.isDigital ? Colors.grey.shade300 : lessonColor),
+                      color: isSelectedForSwap ? Colors.amber.withOpacity(0.3) : lessonColor,
                       child: ListTile(
                         leading: Text(DateFormat.Hm().format(slot.dateTime), style: TextStyle(fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary)),
                         title: Text(slot.fullLessonName),
-                        trailing: slot.isDigital || slot.lessonName == null ? null : IconButton(
+                        trailing: slot.isDigital ? Icon(Icons.computer, color: Colors.teal) : (slot.lessonName == 'Boş Etüt' ? null : IconButton(
                           icon: Icon(Icons.swap_horiz, color: isSelectedForSwap ? Colors.amber.shade900 : null),
                           onPressed: () => _handleSwap(slot),
-                        ),
+                        )),
                       ),
                     );
                   },
