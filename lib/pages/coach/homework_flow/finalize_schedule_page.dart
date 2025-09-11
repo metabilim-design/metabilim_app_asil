@@ -6,11 +6,10 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:metabilim/models/user_model.dart';
 import 'package:metabilim/pages/coach/homework_flow/preview_schedule_page.dart';
-// Merkezi ve doğru Topic modelini buradan alıyoruz.
 import 'package:metabilim/pages/coach/homework_flow/select_topic_page.dart';
 import 'dart:math';
 
-// Her bir etüde atanacak görevin parçalarını ve sayfa aralığını tutan yardımcı sınıf.
+// Kitap görevleri için model
 class TaskChunk {
   final Topic originalTopic;
   final int startPage;
@@ -25,10 +24,19 @@ class TaskChunk {
   String get konu => originalTopic.konu;
   String get bookPublisher => originalTopic.bookPublisher;
   String get bookId => originalTopic.bookId;
-  // Önizlemede gösterilecek net sayfa aralığı (örn: "Sayfa 50 - 59")
   String get chunkPageRange => 'Sayfa $startPage - ${endPage - 1}';
 }
 
+// Deneme görevleri için model
+class PracticeTask {
+  final Practice originalPractice;
+  PracticeTask({required this.originalPractice});
+
+  String get name => originalPractice.name;
+  String get publisher => originalPractice.publisher;
+  String get id => originalPractice.id;
+  String get lesson => originalPractice.lesson;
+}
 
 class FinalizeSchedulePage extends StatefulWidget {
   final AppUser student;
@@ -36,6 +44,7 @@ class FinalizeSchedulePage extends StatefulWidget {
   final DateTime endDate;
   final Map<DateTime, List<EtudSlot>> initialSchedule;
   final List<Topic> selectedTopics;
+  final List<Practice> selectedPractices;
   final List<String> allSelectedMaterialIds;
   final Map<String, int> lessonEtuds;
   final int effortRating;
@@ -47,6 +56,7 @@ class FinalizeSchedulePage extends StatefulWidget {
     required this.endDate,
     required this.initialSchedule,
     required this.selectedTopics,
+    required this.selectedPractices,
     required this.allSelectedMaterialIds,
     required this.lessonEtuds,
     required this.effortRating,
@@ -65,7 +75,7 @@ class _FinalizeSchedulePageState extends State<FinalizeSchedulePage> {
   @override
   void initState() {
     super.initState();
-    _finalSchedule = _distributeAndSplitTopics();
+    _finalSchedule = _distributeTasks();
   }
 
   @override
@@ -74,78 +84,84 @@ class _FinalizeSchedulePageState extends State<FinalizeSchedulePage> {
     super.dispose();
   }
 
-  // --- İSTEDİĞİN ESNEK DAĞITIM MANTIĞI BURADA ---
-  Map<DateTime, List<EtudSlot>> _distributeAndSplitTopics() {
-    // 1. Adım: Konuları ve etütleri derslere göre grupla.
-    final Map<String, List<Topic>> topicsByLesson = {};
-    for (var topic in widget.selectedTopics) {
-      topicsByLesson.putIfAbsent(topic.lesson, () => []).add(topic);
-    }
-
+  // ### SON İSTEK BURADA DÜZELTİLDİ: GÖREVLER ARTIK KARIŞTIRILIYOR ###
+  Map<DateTime, List<EtudSlot>> _distributeTasks() {
+    // 1. Adım: Tüm etütleri derslere göre grupla
     final Map<String, List<EtudSlot>> slotsByLesson = {};
     final sortedDates = widget.initialSchedule.keys.toList()..sort();
     for (var date in sortedDates) {
       for (var slot in widget.initialSchedule[date]!) {
-        if (!slot.isDigital && widget.lessonEtuds.containsKey(slot.fullLessonName)) {
+        if (!slot.isDigital) {
           slotsByLesson.putIfAbsent(slot.fullLessonName, () => []).add(slot);
         }
       }
     }
 
-    // 2. Adım: Her ders için dağıtımı kendi içinde, esnek bir şekilde yap.
+    // 2. Adım: Her ders için görevleri oluştur ve karıştır
     slotsByLesson.forEach((lessonName, lessonSlots) {
-      final lessonTopics = topicsByLesson[lessonName] ?? [];
-      // Eğer bu ders için hiç konu seçilmemişse, etütleri "Boş Etüt" olarak bırak.
-      if (lessonTopics.isEmpty) {
-        for (var slot in lessonSlots) {
-          slot.assignedTask = null;
-        }
-        return; // Sonraki derse geç.
-      }
+      // O derse ait tüm görevleri (deneme + kitap) tek bir listede topla
+      final List<dynamic> allTasksForLesson = [];
 
-      // 3. Adım: Bu derse ait tüm seçili sayfaları tek bir listeye topla.
-      final List<MapEntry<Topic, int>> allPages = [];
-      for (var topic in lessonTopics) {
-        for (int i = topic.startPage; i < topic.endPage; i++) {
-          allPages.add(MapEntry(topic, i));
+      // a) Seçilen denemeleri ekle
+      final lessonPractices = widget.selectedPractices.where((p) => p.lesson == lessonName);
+      for (var practice in lessonPractices) {
+        for (int i = 0; i < practice.selectedCount; i++) {
+          allTasksForLesson.add(PracticeTask(originalPractice: practice));
         }
       }
 
-      final totalPages = allPages.length;
-      final totalSlots = lessonSlots.length;
+      // b) Kitap konularını sayfalara bölerek ekle
+      final lessonTopics = widget.selectedTopics.where((t) => t.lesson == lessonName).toList();
+      final bookSlotsCount = lessonSlots.length - allTasksForLesson.length;
 
-      if (totalPages == 0) return; // Çözülecek sayfa yoksa bu dersi atla.
-
-      // 4. Adım: Akıllı ve Esnek Dağıtım
-      // Her etüde en az kaç sayfa düşeceğini ve kaç etüde +1 sayfa ekleneceğini hesapla.
-      int pagesPerSlot = totalPages ~/ totalSlots;
-      int extraPages = totalPages % totalSlots;
-      int currentPageIndex = 0;
-
-      // 5. Adım: Sayfaları etütlere bölüştür.
-      for (int i = 0; i < totalSlots; i++) {
-        final slot = lessonSlots[i];
-        // Eğer dağıtılacak sayfa kalmadıysa (çok fazla etüt, çok az sayfa durumu), etüdü boş bırak.
-        if (currentPageIndex >= totalPages) {
-          slot.assignedTask = null;
-          continue;
+      if (bookSlotsCount > 0 && lessonTopics.isNotEmpty) {
+        final List<MapEntry<Topic, int>> allPages = [];
+        for (var topic in lessonTopics) {
+          for (int i = topic.startPage; i < topic.endPage; i++) {
+            allPages.add(MapEntry(topic, i));
+          }
         }
 
-        // Bu etüde düşen sayfa sayısını belirle.
-        int pagesForThisSlot = pagesPerSlot + (i < extraPages ? 1 : 0);
+        final totalPages = allPages.length;
+        if(totalPages > 0) {
+          int pagesPerSlot = totalPages ~/ bookSlotsCount;
+          int extraPages = totalPages % bookSlotsCount;
+          int currentPageIndex = 0;
 
-        // Görevin başlangıç ve bitiş sayfalarını belirle.
-        final startEntry = allPages[currentPageIndex];
-        final endEntryIndex = min(currentPageIndex + pagesForThisSlot, allPages.length);
-        final endEntry = allPages[endEntryIndex - 1];
+          for (int i = 0; i < bookSlotsCount; i++) {
+            if (currentPageIndex >= totalPages) break;
+            int pagesForThisSlot = pagesPerSlot + (i < extraPages ? 1 : 0);
+            final startEntry = allPages[currentPageIndex];
+            final endEntryIndex = min(currentPageIndex + pagesForThisSlot, allPages.length);
+            final endEntry = allPages[endEntryIndex - 1];
 
-        // Bu etüt için görev parçasını (TaskChunk) oluştur ve ata.
-        slot.assignedTask = TaskChunk(
-          originalTopic: startEntry.key,
-          startPage: startEntry.value,
-          endPage: endEntry.value + 1, // Bitiş sayfası dahil edilmeyeceği için +1
-        );
-        currentPageIndex = endEntryIndex;
+            allTasksForLesson.add(TaskChunk(
+              originalTopic: startEntry.key,
+              startPage: startEntry.value,
+              endPage: endEntry.value + 1,
+            ));
+            currentPageIndex = endEntryIndex;
+          }
+        }
+      }
+
+      // 3. Adım: Oluşturulan tüm görevleri güzelce karıştır
+      allTasksForLesson.shuffle(Random());
+
+      // 4. Adım: Karıştırılmış görevleri etütlere sırayla ata
+      for (int i = 0; i < lessonSlots.length; i++) {
+        if (i < allTasksForLesson.length) {
+          final task = allTasksForLesson[i];
+          if (task is PracticeTask) {
+            lessonSlots[i].assignedPractice = task;
+          } else if (task is TaskChunk) {
+            lessonSlots[i].assignedTask = task;
+          }
+        } else {
+          // Eğer görev kalmadıysa boş etüt olarak bırak
+          lessonSlots[i].assignedTask = null;
+          lessonSlots[i].assignedPractice = null;
+        }
       }
     });
 
@@ -154,7 +170,6 @@ class _FinalizeSchedulePageState extends State<FinalizeSchedulePage> {
 
 
   Future<void> _saveScheduleToFirebase() async {
-    // ... (Kaydetme fonksiyonunda değişiklik yok, doğru çalışıyor)
     setState(() => _isSaving = true);
     try {
       final dailySlotsForDB = <String, dynamic>{};
@@ -167,18 +182,27 @@ class _FinalizeSchedulePageState extends State<FinalizeSchedulePage> {
         dailySlotsForDB[dateKey] = slots.map((slot) {
           Map<String, dynamic> taskData = {};
           final assignedTask = slot.assignedTask;
+          final assignedPractice = slot.assignedPractice;
 
           if (slot.isDigital) {
             taskData = {'type': 'digital', 'task': 'Dijital Etüt', 'status': 'assigned'};
+          } else if (assignedPractice != null) {
+            taskData = {
+              'type': 'practice',
+              'subject': slot.fullLessonName,
+              'publisher': assignedPractice.publisher,
+              'practiceId': assignedPractice.id,
+              'status': 'assigned',
+            };
           } else if (assignedTask != null) {
             taskData = {
               'type': 'topic',
-              'subject': slot.fullLessonName, // Orijinal ders adını koruyoruz
+              'subject': slot.fullLessonName,
               'publisher': assignedTask.bookPublisher,
               'bookId': assignedTask.bookId,
               'konu': assignedTask.konu,
               'sayfa': '${assignedTask.startPage}-${assignedTask.endPage-1}',
-              'chunkPageRange': assignedTask.chunkPageRange, // "Sayfa 50-59" metnini de kaydediyoruz
+              'chunkPageRange': assignedTask.chunkPageRange,
               'status': 'assigned',
             };
           } else {
@@ -219,7 +243,6 @@ class _FinalizeSchedulePageState extends State<FinalizeSchedulePage> {
 
   @override
   Widget build(BuildContext context) {
-    // --- ÖNİZLEME EKRANI GÜNCELLEMESİ BURADA ---
     final scheduleDays = _finalSchedule.keys.toList()..sort();
 
     return Scaffold(
@@ -233,10 +256,7 @@ class _FinalizeSchedulePageState extends State<FinalizeSchedulePage> {
               children: [
                 IconButton(
                   icon: const Icon(Icons.arrow_back_ios),
-                  onPressed: _currentPage > 0
-                      ? () => _pageController.previousPage(
-                      duration: const Duration(milliseconds: 300), curve: Curves.ease)
-                      : null,
+                  onPressed: _currentPage > 0 ? () => _pageController.previousPage(duration: const Duration(milliseconds: 300), curve: Curves.ease) : null,
                 ),
                 Expanded(
                   child: Text(
@@ -248,10 +268,7 @@ class _FinalizeSchedulePageState extends State<FinalizeSchedulePage> {
                 ),
                 IconButton(
                   icon: const Icon(Icons.arrow_forward_ios),
-                  onPressed: _currentPage < scheduleDays.length - 1
-                      ? () => _pageController.nextPage(
-                      duration: const Duration(milliseconds: 300), curve: Curves.ease)
-                      : null,
+                  onPressed: _currentPage < scheduleDays.length - 1 ? () => _pageController.nextPage(duration: const Duration(milliseconds: 300), curve: Curves.ease) : null,
                 ),
               ],
             ),
@@ -259,11 +276,7 @@ class _FinalizeSchedulePageState extends State<FinalizeSchedulePage> {
           Expanded(
             child: PageView.builder(
               controller: _pageController,
-              onPageChanged: (index) {
-                setState(() {
-                  _currentPage = index;
-                });
-              },
+              onPageChanged: (index) => setState(() => _currentPage = index),
               itemCount: scheduleDays.length,
               itemBuilder: (context, index) {
                 final day = scheduleDays[index];
@@ -274,25 +287,23 @@ class _FinalizeSchedulePageState extends State<FinalizeSchedulePage> {
                   itemBuilder: (context, slotIndex) {
                     final slot = slots[slotIndex];
                     final task = slot.assignedTask;
-                    final lessonColor = slot.isDigital ? Colors.teal.shade100 : (task != null ? Colors.blue.shade100 : Colors.grey.shade200);
+                    final practice = slot.assignedPractice;
+                    final lessonColor = slot.isDigital ? Colors.teal.shade100 : (task != null || practice != null ? Colors.blue.shade100 : Colors.grey.shade200);
 
                     return Card(
                       margin: const EdgeInsets.symmetric(vertical: 6),
                       color: lessonColor,
                       child: ListTile(
-                        leading: Text(DateFormat.Hm().format(slot.dateTime),
-                            style: TextStyle(fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary)),
+                        leading: Text(DateFormat.Hm().format(slot.dateTime), style: TextStyle(fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary)),
                         title: Text(
-                          // Eğer görev varsa konunun adını, yoksa orijinal ders adını göster
-                            task?.konu ?? slot.fullLessonName,
+                            practice?.name ?? task?.konu ?? slot.fullLessonName,
                             style: GoogleFonts.poppins(fontWeight: FontWeight.w600)
                         ),
                         subtitle: Text(
-                          // Alt başlıkta yayıncı ve net sayfa aralığını göster
-                          task != null ? '${task.bookPublisher} - ${task.chunkPageRange}' : (slot.isDigital ? 'Çevrimiçi Etüt' : 'Boş Etüt'),
+                          practice != null ? '${practice.publisher} Denemesi' : (task != null ? '${task.bookPublisher} - ${task.chunkPageRange}' : (slot.isDigital ? 'Çevrimiçi Etüt' : 'Boş Etüt')),
                           style: GoogleFonts.poppins(fontSize: 12),
                         ),
-                        trailing: slot.isDigital ? const Icon(Icons.computer, color: Colors.teal) : null,
+                        trailing: practice != null ? Icon(Icons.assignment_outlined, color: Colors.purple) : (slot.isDigital ? const Icon(Icons.computer, color: Colors.teal) : null),
                       ),
                     );
                   },
@@ -321,13 +332,17 @@ class _FinalizeSchedulePageState extends State<FinalizeSchedulePage> {
   }
 }
 
-// EtudSlot'a atanmış görevi (TaskChunk) eklemek için bir extension.
-// Bu, orijinal EtudSlot sınıfını değiştirmeden ona yeni bir özellik eklememizi sağlar.
 extension EtudSlotExtension on EtudSlot {
-  static final Map<EtudSlot, TaskChunk?> _assignedTasks = {};
+  static final Map<EtudSlot, dynamic> _assignedTasks = {};
 
-  TaskChunk? get assignedTask => _assignedTasks[this];
-  set assignedTask(TaskChunk? task) {
+  dynamic get _assignedGenericTask => _assignedTasks[this];
+  set _assignedGenericTask(dynamic task) {
     _assignedTasks[this] = task;
   }
+
+  TaskChunk? get assignedTask => _assignedGenericTask is TaskChunk ? _assignedGenericTask : null;
+  set assignedTask(TaskChunk? task) => _assignedGenericTask = task;
+
+  PracticeTask? get assignedPractice => _assignedGenericTask is PracticeTask ? _assignedGenericTask : null;
+  set assignedPractice(PracticeTask? task) => _assignedGenericTask = task;
 }

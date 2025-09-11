@@ -5,15 +5,15 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:metabilim/models/user_model.dart';
 import 'package:metabilim/pages/coach/homework_flow/finalize_schedule_page.dart';
-// HATA DÜZELTMESİ: EtudSlot'un tanımını içeren dosyayı import ediyoruz.
 import 'package:metabilim/pages/coach/homework_flow/preview_schedule_page.dart';
+// Artık deneme modelini de içeren bu sayfayı kullanacağız
 import 'package:metabilim/pages/coach/homework_flow/select_topic_page.dart';
 
 class ContinueDirectTopicPage extends StatefulWidget {
   final AppUser student;
   final DateTime startDate;
   final DateTime endDate;
-  final Map<DateTime, List<EtudSlot>> schedule; // Bu satır artık hata vermeyecek
+  final Map<DateTime, List<EtudSlot>> schedule;
   final DocumentSnapshot previousScheduleDoc;
 
   const ContinueDirectTopicPage({
@@ -30,12 +30,12 @@ class ContinueDirectTopicPage extends StatefulWidget {
 }
 
 class _ContinueDirectTopicPageState extends State<ContinueDirectTopicPage> {
-  // ... Geri kalan kodun tamamı aynı, hiçbir değişiklik yok ...
   bool _isLoading = true;
   String? _errorMessage;
-  final Map<String, int> _totalPageQuotas = {};
+  // ### DEĞİŞİKLİK: Denemeler ve kitaplar için ayrı haritalar ###
   final Map<String, int> _solvedPageQuotas = {};
   final Map<String, List<Book>> _booksByLesson = {};
+  final Map<String, List<Practice>> _practicesByLesson = {};
 
   late final Map<String, int> _lessonEtuds;
   late final List<String> _selectedMaterials;
@@ -54,7 +54,7 @@ class _ContinueDirectTopicPageState extends State<ContinueDirectTopicPage> {
 
     if (_selectedMaterials.isEmpty) {
       setState(() {
-        _errorMessage = 'Devam etmek için seçilen önceki programda kayıtlı materyal bulunamadı. Lütfen bir önceki ekrana geri dönüp "Materyalleri Değiştir" seçeneği ile ilerleyin.';
+        _errorMessage = 'Devam etmek için seçilen önceki programda kayıtlı materyal bulunamadı.';
         _isLoading = false;
       });
       return;
@@ -69,57 +69,58 @@ class _ContinueDirectTopicPageState extends State<ContinueDirectTopicPage> {
       }
     });
 
-    await _fetchBooksAndCalculateQuotas();
+    // ### DEĞİŞİKLİK: Fonksiyon adı ve içeriği güncellendi ###
+    await _fetchMaterials();
+
+    // Çözülen sayfaları sıfırla
+    _booksByLesson.keys.forEach((lessonName) {
+      _solvedPageQuotas[lessonName] = 0;
+    });
+
     if (mounted) setState(() => _isLoading = false);
   }
 
-  Future<void> _fetchBooksAndCalculateQuotas() async {
-    if (_selectedMaterials.isEmpty) {
-      if (mounted) setState(() => _isLoading = false);
-      return;
-    }
+  // ### DEĞİŞİKLİK: Artık hem kitapları hem denemeleri çekiyor ###
+  Future<void> _fetchMaterials() async {
+    if (_selectedMaterials.isEmpty) return;
 
     final booksSnapshot = await FirebaseFirestore.instance.collection('books').where(FieldPath.documentId, whereIn: _selectedMaterials).get();
-    final List<Book> allBooks = [];
     for (var doc in booksSnapshot.docs) {
       try {
         final data = doc.data();
         final bookPublisher = data['publisher'] ?? 'Bilinmeyen Yayınevi';
         List<dynamic> topicsRaw = data['topics'] is List ? data['topics'] : [];
         final lessonName = '${data['level']} ${data['subject']}';
-
-        allBooks.add(Book(
+        final book = Book(
           id: doc.id,
           name: data['bookType'] ?? 'İsimsiz Kitap',
           lesson: lessonName,
           difficulty: data['difficulty'] ?? 3,
           topics: List<Map<String, dynamic>>.from(topicsRaw).map((topicMap) => Topic.fromMap(topicMap, bookPublisher, doc.id, lessonName)).toList(),
-        ));
+        );
+        _booksByLesson.putIfAbsent(book.lesson, () => []).add(book);
       } catch (e) {
         print('HATA: ${doc.id} IDli kitap işlenirken bir sorun oluştu: $e');
       }
     }
 
-    for (var book in allBooks) {
-      _booksByLesson.putIfAbsent(book.lesson, () => []).add(book);
-    }
-
-    for (String lessonName in _lessonEtuds.keys) {
-      final etudCount = _lessonEtuds[lessonName]!;
-      final booksForLesson = _booksByLesson[lessonName] ?? [];
-      if (booksForLesson.isEmpty) {
-        _totalPageQuotas[lessonName] = 0;
-        _solvedPageQuotas[lessonName] = 0;
-        continue;
-      }
-      final avgDifficulty = booksForLesson.map((b) => b.difficulty).reduce((a, b) => a + b) / booksForLesson.length;
-      final quota = _calculatePageQuota(etudCount, lessonName, avgDifficulty, _effortRating);
-      _totalPageQuotas[lessonName] = quota;
-      _solvedPageQuotas[lessonName] = 0;
+    final practicesSnapshot = await FirebaseFirestore.instance.collection('practices').where(FieldPath.documentId, whereIn: _selectedMaterials).get();
+    for (var doc in practicesSnapshot.docs) {
+      final data = doc.data();
+      final lessonName = '${data['level']} ${data['subject']}';
+      final practice = Practice(
+        id: doc.id,
+        name: data['practiceName'] ?? 'İsimsiz Deneme',
+        lesson: lessonName,
+        publisher: data['publisher'] ?? 'Bilinmeyen Yayınevi',
+        totalCount: data['count'] ?? 0,
+      );
+      _practicesByLesson.putIfAbsent(practice.lesson, () => []).add(practice);
     }
   }
 
-  int _calculatePageQuota(int etudCount, String lessonName, double avgBookDifficulty, int effort) {
+  int _calculatePageQuota(int bookEtudCount, String lessonName, double avgBookDifficulty, int effort) {
+    if (bookEtudCount <= 0) return 0;
     const double basePagesPerEtud = 10.0;
     double lessonMultiplier = 1.0;
     if (lessonName.contains('Fizik') || lessonName.contains('Kimya') || lessonName.contains('Türkçe')) {
@@ -131,7 +132,7 @@ class _ContinueDirectTopicPageState extends State<ContinueDirectTopicPage> {
     final bookMultiplier = bookDifficultyMultipliers[avgBookDifficulty.round()] ?? 1.0;
     final effortMultipliers = {1: 1/3, 2: 2/3, 3: 1.0, 4: 4/3, 5: 5/3};
     final effortMultiplier = effortMultipliers[effort] ?? 1.0;
-    final totalPages = etudCount * basePagesPerEtud * lessonMultiplier * bookMultiplier * effortMultiplier;
+    final totalPages = bookEtudCount * basePagesPerEtud * lessonMultiplier * bookMultiplier * effortMultiplier;
     return totalPages.round();
   }
 
@@ -143,6 +144,7 @@ class _ContinueDirectTopicPageState extends State<ContinueDirectTopicPage> {
     });
   }
 
+  // ### DEĞİŞİKLİK: Artık denemeleri de topluyor ###
   void _finalizeAndProceed() {
     final List<Topic> allSelectedTopics = [];
     _booksByLesson.forEach((lesson, books) {
@@ -151,8 +153,17 @@ class _ContinueDirectTopicPageState extends State<ContinueDirectTopicPage> {
       }
     });
 
-    if (allSelectedTopics.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Lütfen devam etmek için en az bir konu seçin.')));
+    final List<Practice> allSelectedPractices = [];
+    _practicesByLesson.forEach((lesson, practices) {
+      for (var practice in practices) {
+        if (practice.selectedCount > 0) {
+          allSelectedPractices.add(practice);
+        }
+      }
+    });
+
+    if (allSelectedTopics.isEmpty && allSelectedPractices.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Lütfen devam etmek için en az bir konu veya deneme seçin.')));
       return;
     }
 
@@ -162,6 +173,7 @@ class _ContinueDirectTopicPageState extends State<ContinueDirectTopicPage> {
       endDate: widget.endDate,
       initialSchedule: widget.schedule,
       selectedTopics: allSelectedTopics,
+      selectedPractices: allSelectedPractices,
       allSelectedMaterialIds: _selectedMaterials,
       lessonEtuds: _lessonEtuds,
       effortRating: _effortRating,
@@ -170,11 +182,12 @@ class _ContinueDirectTopicPageState extends State<ContinueDirectTopicPage> {
 
   @override
   Widget build(BuildContext context) {
-    final lessonKeys = _totalPageQuotas.keys.where((k) => _booksByLesson.containsKey(k)).toList();
+    // ### DEĞİŞİKLİK: Artık hem kitap hem deneme derslerini birleştiriyor ###
+    final lessonKeys = {..._booksByLesson.keys, ..._practicesByLesson.keys}.toList();
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Konu Seçimi', style: GoogleFonts.poppins()),
+        title: Text('Konu & Deneme Seçimi', style: GoogleFonts.poppins()),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -182,19 +195,16 @@ class _ContinueDirectTopicPageState extends State<ContinueDirectTopicPage> {
           ? Center(
         child: Padding(
           padding: const EdgeInsets.all(24.0),
-          child: Text(
-            _errorMessage!,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 16, color: Colors.red),
-          ),
+          child: Text(_errorMessage!, textAlign: TextAlign.center, style: const TextStyle(fontSize: 16, color: Colors.red)),
         ),
       )
-          : _booksByLesson.isEmpty
+      // ### DEĞİŞİKLİK: Hata mesajı artık denemeleri de kontrol ediyor ###
+          : _booksByLesson.isEmpty && _practicesByLesson.isEmpty
           ? const Center(
         child: Padding(
           padding: EdgeInsets.all(24.0),
           child: Text(
-            'Seçilen materyaller arasında konu içeren bir kitap bulunamadı. Lütfen materyal seçiminizi değiştirin.',
+            'Seçilen materyaller arasında konu veya deneme bulunamadı. Lütfen materyal seçiminizi değiştirin.',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 16),
           ),
@@ -222,11 +232,19 @@ class _ContinueDirectTopicPageState extends State<ContinueDirectTopicPage> {
     );
   }
 
+  // ### DEĞİŞİKLİK: Bu widget artık `select_topic_page` içindekiyle aynı mantıkta çalışıyor ###
   Widget _buildLessonCard(String lessonName) {
-    final totalPages = _totalPageQuotas[lessonName]!;
-    final solvedPages = _solvedPageQuotas[lessonName]!;
-    final progress = totalPages > 0 ? (solvedPages / totalPages).clamp(0.0, 1.0) : 0.0;
     final books = _booksByLesson[lessonName] ?? [];
+    final practices = _practicesByLesson[lessonName] ?? [];
+
+    final totalEtudCount = _lessonEtuds[lessonName] ?? 0;
+    final selectedPracticeCount = practices.fold<int>(0, (sum, p) => sum + p.selectedCount);
+    final bookEtudCount = totalEtudCount - selectedPracticeCount;
+
+    final avgDifficulty = books.isEmpty ? 3.0 : books.map((b) => b.difficulty).reduce((a, b) => a + b) / books.length;
+    final totalPages = _calculatePageQuota(bookEtudCount, lessonName, avgDifficulty, _effortRating);
+    final solvedPages = _solvedPageQuotas[lessonName] ?? 0;
+    final progress = totalPages > 0 ? (solvedPages / totalPages).clamp(0.0, 1.0) : 0.0;
 
     return Card(
       elevation: 4,
@@ -238,26 +256,54 @@ class _ContinueDirectTopicPageState extends State<ContinueDirectTopicPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(lessonName, style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('Hedef: $solvedPages / $totalPages sayfa', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
-                Text('${(progress * 100).toStringAsFixed(0)}%', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
-              ],
-            ),
-            const SizedBox(height: 4),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: LinearProgressIndicator(
-                value: progress,
-                minHeight: 10,
-                backgroundColor: Colors.grey[300],
-                valueColor: AlwaysStoppedAnimation<Color>(solvedPages > totalPages ? Colors.orangeAccent : Colors.lightBlueAccent),
+            if (practices.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text("Deneme Hedefi", style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.purple)),
+              const SizedBox(height: 4),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Hedef: $selectedPracticeCount / $totalEtudCount etüt', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+                  Text('${(totalEtudCount > 0 ? (selectedPracticeCount/totalEtudCount) * 100 : 0).toStringAsFixed(0)}%', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+                ],
               ),
-            ),
-            const Divider(height: 20, thickness: 1),
-            ...books.map((book) => _buildBookTile(book, lessonName)).toList(),
+              const SizedBox(height: 4),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: LinearProgressIndicator(
+                  value: totalEtudCount > 0 ? (selectedPracticeCount / totalEtudCount) : 0.0,
+                  minHeight: 10,
+                  backgroundColor: Colors.grey[300],
+                  valueColor: const AlwaysStoppedAnimation<Color>(Colors.purpleAccent),
+                ),
+              ),
+              const Divider(height: 20, thickness: 1),
+              ...practices.map((practice) => _buildPracticeTile(practice, lessonName, totalEtudCount > selectedPracticeCount)).toList(),
+            ],
+            if (books.isNotEmpty) ...[
+              const Divider(height: 20, thickness: 1),
+              Text("Kitap Hedefi (Kalan Etüt: $bookEtudCount)", style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blue)),
+              const SizedBox(height: 4),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Hedef: $solvedPages / $totalPages sayfa', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+                  Text('${(progress * 100).toStringAsFixed(0)}%', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+                ],
+              ),
+              const SizedBox(height: 4),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: LinearProgressIndicator(
+                  value: progress,
+                  minHeight: 10,
+                  backgroundColor: Colors.grey[300],
+                  valueColor: AlwaysStoppedAnimation<Color>(solvedPages > totalPages ? Colors.orangeAccent : Colors.lightBlueAccent),
+                ),
+              ),
+              const Divider(height: 20, thickness: 1),
+              ...books.map((book) => _buildBookTile(book, lessonName)).toList(),
+            ],
           ],
         ),
       ),
@@ -278,13 +324,34 @@ class _ContinueDirectTopicPageState extends State<ContinueDirectTopicPage> {
           title: Text(topic.konu),
           subtitle: Text('Sayfa ${topic.startPage} - ${topic.endPage} (${topic.pageCount} sayfa)'),
           value: topic.isSelected,
-          onChanged: (bool? value) {
-            _onTopicSelected(topic, lessonName, value ?? false);
-          },
+          onChanged: (bool? value) => _onTopicSelected(topic, lessonName, value ?? false),
           contentPadding: EdgeInsets.zero,
           controlAffinity: ListTileControlAffinity.leading,
         );
       }).toList(),
+    );
+  }
+
+  Widget _buildPracticeTile(Practice practice, String lessonName, bool hasRemainingSlots) {
+    return ListTile(
+      title: Text(practice.name, style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+      subtitle: Text(practice.publisher),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.remove_circle_outline),
+            onPressed: practice.selectedCount > 0 ? () => setState(() => practice.selectedCount--) : null,
+          ),
+          Text(practice.selectedCount.toString(), style: const TextStyle(fontSize: 18)),
+          IconButton(
+            icon: const Icon(Icons.add_circle_outline),
+            onPressed: (practice.selectedCount < practice.totalCount && hasRemainingSlots)
+                ? () => setState(() => practice.selectedCount++)
+                : null,
+          ),
+        ],
+      ),
     );
   }
 }

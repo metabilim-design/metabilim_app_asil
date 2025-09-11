@@ -1,3 +1,5 @@
+// lib/pages/admin/class_detail_page.dart
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -16,11 +18,8 @@ class _ClassDetailPageState extends State<ClassDetailPage> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = "";
 
-  // Değişiklikleri geçici olarak tutacak listeler
   List<DocumentSnapshot> _studentsInClass = [];
   List<DocumentSnapshot> _unassignedStudents = [];
-
-  // Sayfa ilk açıldığında sınıftaki öğrencilerin ID'lerini sakla
   List<String> _initialStudentIdsInClass = [];
 
   bool _isLoading = true;
@@ -44,28 +43,38 @@ class _ClassDetailPageState extends State<ClassDetailPage> {
     super.dispose();
   }
 
-  // GÜNCELLENDİ: Sayfa açıldığında tüm ilgili öğrencileri bir kere yükler
+  // ### HATA BURADAYDI, DÜZELTİLDİ ###
+  // Artık iki ayrı sorgu yerine tüm öğrenciler tek seferde çekilip uygulama içinde ayrıştırılıyor.
+  // Bu, veri tutarlılığını garanti altına alıyor.
   Future<void> _loadAllStudents() async {
     setState(() => _isLoading = true);
-    // 1. Adım: Bu sınıfa ait öğrencileri çek
-    final classSnapshot = await _firestore.collection('users').where('class', isEqualTo: widget.classId).get();
 
-    // 2. Adım: Hiçbir sınıfı olmayan (gerçekten boştaki) öğrencileri çek
-    // Bu sorgu, bir öğrencinin başka bir sınıftaysa burada görünmesini engeller.
-    final unassignedSnapshot = await _firestore.collection('users').where('class', isEqualTo: null).where('role', isEqualTo: 'Ogrenci').get();
+    // 1. Adım: Tüm öğrencileri çek
+    final allStudentsSnapshot = await _firestore.collection('users').where('role', isEqualTo: 'Ogrenci').get();
+
+    final List<DocumentSnapshot> inClass = [];
+    final List<DocumentSnapshot> notInClass = [];
+
+    // 2. Adım: Öğrencileri bu sınıfta olanlar ve olmayanlar olarak ayır
+    for (var doc in allStudentsSnapshot.docs) {
+      final data = doc.data() as Map<String, dynamic>;
+      if (data['class'] == widget.classId) {
+        inClass.add(doc);
+      } else {
+        notInClass.add(doc);
+      }
+    }
 
     if (mounted) {
       setState(() {
-        _studentsInClass = classSnapshot.docs;
-        _unassignedStudents = unassignedSnapshot.docs;
-        // Başlangıç durumunu kaydet (kimlerin bu sınıfta olduğunu bilmek için)
-        _initialStudentIdsInClass = classSnapshot.docs.map((doc) => doc.id).toList();
+        _studentsInClass = inClass;
+        _unassignedStudents = notInClass;
+        _initialStudentIdsInClass = inClass.map((doc) => doc.id).toList();
         _isLoading = false;
       });
     }
   }
 
-  // Bir öğrenciyi boştaki listesinden bu sınıfa taşır
   void _moveStudentToClass(DocumentSnapshot student) {
     setState(() {
       _unassignedStudents.remove(student);
@@ -74,7 +83,6 @@ class _ClassDetailPageState extends State<ClassDetailPage> {
     });
   }
 
-  // Bir öğrenciyi bu sınıftan boştaki listesine taşır
   void _moveStudentToUnassigned(DocumentSnapshot student) {
     setState(() {
       _studentsInClass.remove(student);
@@ -83,29 +91,38 @@ class _ClassDetailPageState extends State<ClassDetailPage> {
     });
   }
 
-  // GÜNCELLENDİ: Tüm değişiklikleri akıllı bir şekilde tek seferde kaydeder
+  // GÜNCELLENDİ: Bu fonksiyon artık bir öğrenciyi başka bir sınıftan alırken
+  // o sınıfın 'students' listesini de güncelliyor.
   Future<void> _saveChanges() async {
     setState(() => _isSaving = true);
 
     final batch = _firestore.batch();
     final classRef = _firestore.collection('classes').doc(widget.classId);
 
-    // Son durumdaki öğrenci ID listeleri
     final finalStudentIdsInClass = _studentsInClass.map((doc) => doc.id).toList();
-
-    // Kimler eklendi, kimler çıkarıldı?
-    final addedStudentIds = finalStudentIdsInClass.where((id) => !_initialStudentIdsInClass.contains(id)).toList();
+    final addedStudents = _studentsInClass.where((doc) => !_initialStudentIdsInClass.contains(doc.id)).toList();
     final removedStudentIds = _initialStudentIdsInClass.where((id) => !finalStudentIdsInClass.contains(id)).toList();
 
-    // 1. Adım: Sınıfın 'students' listesini son haliyle güncelle
+    // 1. Adım: Mevcut sınıfın 'students' listesini son haliyle güncelle
     batch.update(classRef, {'students': finalStudentIdsInClass});
 
-    // 2. Adım: Sınıfa yeni eklenen her öğrencinin 'class' alanını bu sınıfın ID'si yap
-    for (var studentId in addedStudentIds) {
-      batch.update(_firestore.collection('users').doc(studentId), {'class': widget.classId});
+    // 2. Adım: Yeni eklenen öğrencilerin 'class' alanını güncelle ve eski sınıflarından çıkar
+    for (var studentDoc in addedStudents) {
+      final studentData = studentDoc.data() as Map<String, dynamic>;
+      final oldClassId = studentData['class'] as String?;
+
+      // Öğrencinin 'class' alanını bu sınıfın ID'si yap
+      batch.update(_firestore.collection('users').doc(studentDoc.id), {'class': widget.classId});
+
+      // Eğer öğrenci daha önce başka bir sınıftaysa, o sınıfın 'students' listesinden çıkar
+      if (oldClassId != null && oldClassId.isNotEmpty) {
+        batch.update(_firestore.collection('classes').doc(oldClassId), {
+          'students': FieldValue.arrayRemove([studentDoc.id])
+        });
+      }
     }
 
-    // 3. Adım: Sınıftan çıkarılan her öğrencinin 'class' alanını null yap (boşa çıkar)
+    // 3. Adım: Sınıftan çıkarılan öğrencilerin 'class' alanını null yap (boşa çıkar)
     for (var studentId in removedStudentIds) {
       batch.update(_firestore.collection('users').doc(studentId), {'class': null});
     }
@@ -116,12 +133,8 @@ class _ClassDetailPageState extends State<ClassDetailPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Değişiklikler başarıyla kaydedildi!'), backgroundColor: Colors.green),
         );
-        // Değişiklikler kaydedildiği için sayfanın durumunu veritabanından yeniden yükle
-        // Bu, en doğru ve en güncel hali görmemizi sağlar.
         await _loadAllStudents();
-        setState(() {
-          _hasChanges = false;
-        });
+        setState(() => _hasChanges = false);
       }
     } catch(e) {
       if(mounted) {
@@ -130,9 +143,7 @@ class _ClassDetailPageState extends State<ClassDetailPage> {
         );
       }
     } finally {
-      if(mounted) {
-        setState(() => _isSaving = false);
-      }
+      if(mounted) setState(() => _isSaving = false);
     }
   }
 
@@ -183,7 +194,7 @@ class _ClassDetailPageState extends State<ClassDetailPage> {
                 ),
                 const VerticalDivider(width: 2),
                 _buildStudentList(
-                  title: 'Boştaki Öğrenciler',
+                  title: 'Diğer Öğrenciler',
                   students: filteredUnassignedStudents,
                   onTap: _moveStudentToClass,
                   icon: Icons.add_circle_outline,

@@ -7,16 +7,10 @@ import 'package:metabilim/pages/coach/homework_flow/continue_preview_schedule_pa
 
 class SelectPreviousSchedulePage extends StatefulWidget {
   final AppUser student;
-  // --- YENİ ---
-  // Bir önceki sayfadan yeni tarih aralığını alıyoruz.
-  final DateTime newStartDate;
-  final DateTime newEndDate;
 
   const SelectPreviousSchedulePage({
     Key? key,
     required this.student,
-    required this.newStartDate,
-    required this.newEndDate,
   }) : super(key: key);
 
   @override
@@ -26,39 +20,14 @@ class SelectPreviousSchedulePage extends StatefulWidget {
 class _SelectPreviousSchedulePageState extends State<SelectPreviousSchedulePage> {
   DocumentSnapshot? _selectedSchedule;
 
-  void _compareAndProceed() {
+  void _proceed() {
     if (_selectedSchedule == null) return;
-
-    final newDuration = widget.newEndDate.difference(widget.newStartDate).inDays;
-
-    final data = _selectedSchedule!.data() as Map<String, dynamic>;
-    final oldStartDate = (data['startDate'] as Timestamp).toDate();
-    final oldEndDate = (data['endDate'] as Timestamp).toDate();
-    final oldDuration = oldEndDate.difference(oldStartDate).inDays;
-
-    if (newDuration != oldDuration) {
-      showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Gün Sayıları Eşleşmiyor'),
-            content: Text(
-                'Yeni seçtiğiniz tarih aralığı (${newDuration + 1} gün), kopyalanacak olan eski programın süresiyle (${oldDuration + 1} gün) aynı değil. Lütfen aynı sürelere sahip bir tarih aralığı seçin.'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Anladım'),
-              )
-            ],
-          ));
-    } else {
-      // Süreler eşit, devam et.
-      Navigator.of(context).push(MaterialPageRoute(
-        builder: (context) => ContinuePreviewSchedulePage(
-          student: widget.student,
-          previousScheduleDoc: _selectedSchedule!,
-        ),
-      ));
-    }
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (context) => ContinuePreviewSchedulePage(
+        student: widget.student,
+        previousScheduleDoc: _selectedSchedule!,
+      ),
+    ));
   }
 
   @override
@@ -95,12 +64,24 @@ class _SelectPreviousSchedulePageState extends State<SelectPreviousSchedulePage>
                 }
 
                 final schedules = snapshot.data!.docs;
+
+                // ### YENİ KONTROL MANTIĞI BURADA ###
+                // Öğrencinin tüm programları arasındaki en son bitiş tarihini bul.
+                DateTime? latestEndDate;
+                for (var doc in schedules) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  final endDate = (data['endDate'] as Timestamp).toDate();
+                  if (latestEndDate == null || endDate.isAfter(latestEndDate)) {
+                    latestEndDate = endDate;
+                  }
+                }
+
                 schedules.sort((a, b) {
                   final aData = a.data() as Map<String, dynamic>;
                   final bData = b.data() as Map<String, dynamic>;
                   final Timestamp tsA = aData['startDate'] ?? Timestamp(0, 0);
                   final Timestamp tsB = bData['startDate'] ?? Timestamp(0, 0);
-                  return tsB.compareTo(tsA);
+                  return tsB.compareTo(tsA); // En yeniden eskiye sırala
                 });
 
                 return ListView.builder(
@@ -112,11 +93,16 @@ class _SelectPreviousSchedulePageState extends State<SelectPreviousSchedulePage>
                     final endDate = (data['endDate'] as Timestamp).toDate();
                     final duration = endDate.difference(startDate).inDays + 1;
 
+                    // Bu programın bitiş tarihi, en son bitiş tarihinden önce mi diye kontrol et.
+                    // Eğer öyleyse, bu programdan zaten devam edilmiştir.
+                    final bool isOutdated = latestEndDate != null && endDate.isBefore(latestEndDate);
+
                     final formattedStartDate = DateFormat.yMMMMd('tr_TR').format(startDate);
                     final formattedEndDate = DateFormat.yMMMMd('tr_TR').format(endDate);
                     final isSelected = _selectedSchedule?.id == scheduleDoc.id;
 
                     return Card(
+                      color: isOutdated ? Colors.grey.shade200 : null, // Pasifse rengini değiştir
                       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
@@ -126,13 +112,20 @@ class _SelectPreviousSchedulePageState extends State<SelectPreviousSchedulePage>
                         ),
                       ),
                       child: ListTile(
+                        enabled: !isOutdated, // Pasifse tıklanmasını engelle
                         leading: const Icon(Icons.calendar_today_outlined),
                         title: Text('$duration Günlük Program', style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
                         subtitle: Text('$formattedStartDate - $formattedEndDate', style: GoogleFonts.poppins()),
+                        trailing: isOutdated
+                            ? Text("Devam Edilmiş", style: TextStyle(color: Colors.grey.shade700, fontStyle: FontStyle.italic))
+                            : const Icon(Icons.arrow_forward_ios, size: 16),
                         onTap: () {
-                          setState(() {
-                            _selectedSchedule = scheduleDoc;
-                          });
+                          // Sadece pasif olmayanlar seçilebilir
+                          if (!isOutdated) {
+                            setState(() {
+                              _selectedSchedule = scheduleDoc;
+                            });
+                          }
                         },
                       ),
                     );
@@ -146,16 +139,14 @@ class _SelectPreviousSchedulePageState extends State<SelectPreviousSchedulePage>
       bottomNavigationBar: Padding(
         padding: const EdgeInsets.all(16.0),
         child: ElevatedButton(
-          onPressed: _selectedSchedule == null
-              ? null
-              : _compareAndProceed,
+          onPressed: _selectedSchedule == null ? null : _proceed,
           style: ElevatedButton.styleFrom(
             padding: const EdgeInsets.symmetric(vertical: 16),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
             ),
           ),
-          child: const Text('Karşılaştır ve Devam Et', style: TextStyle(fontSize: 16)),
+          child: const Text('Devam Et', style: TextStyle(fontSize: 16)),
         ),
       ),
     );
