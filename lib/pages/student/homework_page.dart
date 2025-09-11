@@ -6,18 +6,33 @@ import 'package:intl/intl.dart';
 import 'homework_detail_page.dart';
 
 class HomeworkPage extends StatefulWidget {
-  const HomeworkPage({super.key});
+  // --- YENİ EKLENDİ ---
+  final String? studentId;
+  const HomeworkPage({super.key, this.studentId});
+  // --- BİTTİ ---
 
   @override
   State<HomeworkPage> createState() => _HomeworkPageState();
 }
 
 class _HomeworkPageState extends State<HomeworkPage> {
-  // DÜZELTME 1: Sorgu basitleştirildi, orderBy kaldırıldı.
-  final Stream<QuerySnapshot> _schedulesStream = FirebaseFirestore.instance
-      .collection('schedules')
-      .where('studentUid', isEqualTo: FirebaseAuth.instance.currentUser?.uid)
-      .snapshots();
+  // --- DEĞİŞİKLİK BURADA ---
+  late Stream<QuerySnapshot> _schedulesStream;
+  late String _targetStudentId;
+
+  @override
+  void initState() {
+    super.initState();
+    // Veli bakıyorsa onun verdiği ID'yi, öğrenci bakıyorsa kendi ID'sini kullan
+    _targetStudentId = widget.studentId ?? FirebaseAuth.instance.currentUser!.uid;
+
+    // Sorguyu bu ID'ye göre oluştur
+    _schedulesStream = FirebaseFirestore.instance
+        .collection('schedules')
+        .where('studentUid', isEqualTo: _targetStudentId)
+        .snapshots();
+  }
+  // --- BİTTİ ---
 
   @override
   Widget build(BuildContext context) {
@@ -35,17 +50,16 @@ class _HomeworkPageState extends State<HomeworkPage> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.data!.docs.isEmpty) {
-            return Center(child: Text('Henüz size atanmış bir program bulunmuyor.', style: GoogleFonts.poppins()));
+            return Center(child: Text('Henüz atanmış bir program bulunmuyor.', style: GoogleFonts.poppins()));
           }
 
-          // DÜZELTME 2: Sıralama işlemi veritabanından alınıp kod içinde yapılıyor.
           final schedules = snapshot.data!.docs;
           schedules.sort((a, b) {
             final aData = a.data() as Map<String, dynamic>;
             final bData = b.data() as Map<String, dynamic>;
             final Timestamp tsA = aData['startDate'] ?? Timestamp(0, 0);
             final Timestamp tsB = bData['startDate'] ?? Timestamp(0, 0);
-            return tsB.compareTo(tsA); // En yeniden eskiye (descending)
+            return tsB.compareTo(tsA);
           });
 
           return ListView(

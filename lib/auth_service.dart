@@ -24,7 +24,6 @@ class AuthService {
     }
   }
 
-  // GÜNCELLENDİ: Öğrenci kaydı sadeleştirildi. Sınıf ve koç ataması artık buradan yapılmıyor.
   Future<String?> registerStudent({
     required String name,
     required String surname,
@@ -42,8 +41,8 @@ class AuthService {
           'number': number,
           'email': email,
           'role': 'Ogrenci',
-          'class': null, // Başlangıçta sınıfı yok
-          'coachUid': null, // Başlangıçta koçu yok
+          'class': null,
+          'coachUid': null,
         });
         return null;
       }
@@ -105,7 +104,7 @@ class AuthService {
     return 'Bilinmeyen bir hata oluştu.';
   }
 
-  // GÜNCELLENDİ: Veli kaydı artık ilişkili öğrencinin ID'sini (studentUid) alıyor
+  // --- BU FONKSİYON GÜNCELLENDİ ---
   Future<String?> registerParent({
     required String name,
     required String surname,
@@ -113,7 +112,7 @@ class AuthService {
     required String password,
     required String? studentUid,
   }) async {
-    if (studentUid == null) {
+    if (studentUid == null || studentUid.isEmpty) {
       return 'Lütfen velinin bağlanacağı öğrenciyi seçin.';
     }
     String email = '$username@metabilim.parent';
@@ -127,7 +126,7 @@ class AuthService {
           'username': username,
           'email': email,
           'role': 'Veli',
-          'studentUid': studentUid, // Öğrenci bağlantısını veritabanına kaydediyoruz
+          'studentUid': studentUid,
         });
         return null;
       }
@@ -136,6 +135,7 @@ class AuthService {
     }
     return 'Bilinmeyen bir hata oluştu.';
   }
+  // --- BİTTİ ---
 
   String _getEmailSuffixForRole(String role) {
     switch (role) {

@@ -83,12 +83,15 @@ class _VeliShellState extends State<VeliShell> {
       );
     }
 
+    // --- DEĞİŞİKLİK BURADA ---
+    // Sayfa listesini build metodunun içine taşıdık ki _studentUid'yi kullanabilelim.
     final List<Widget> pages = <Widget>[
       DashboardPage(studentId: _studentUid!, studentName: _studentName, parentName: _parentName),
-      const HomeworkPage(),
-      const ExamsPage(),
+      HomeworkPage(studentId: _studentUid!), // Ödevler sayfasına öğrenci ID'sini gönderiyoruz
+      ExamsPage(studentId: _studentUid!),    // Denemeler sayfasına öğrenci ID'sini gönderiyoruz
       AttendancePage(studentId: _studentUid!),
     ];
+    // --- BİTTİ ---
 
     return Scaffold(
       appBar: AppBar(

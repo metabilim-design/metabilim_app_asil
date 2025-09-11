@@ -28,14 +28,10 @@ class _EditUserPageState extends State<EditUserPage> {
   // State değişkenleri
   late String _selectedRole;
   bool _isLoading = false;
-  List<DocumentSnapshot> _coaches = [];
-  String? _selectedCoachId;
-  String? _selectedGrade;
-  String? _selectedBranch;
 
-  // Sabit Listeler
-  final List<String> _gradeLevels = ['9', '10', '11', '12', 'Mezun'];
-  final List<String> _branchLetters = List.generate(12, (index) => String.fromCharCode('A'.codeUnitAt(0) + index));
+  // Sadece Veli için kullanılacak liste
+  List<DocumentSnapshot> _students = [];
+  String? _selectedStudentId;
 
   @override
   void initState() {
@@ -43,28 +39,25 @@ class _EditUserPageState extends State<EditUserPage> {
     _nameController = TextEditingController(text: widget.userData['name'] ?? '');
     _surnameController = TextEditingController(text: widget.userData['surname'] ?? '');
     _selectedRole = widget.userData['role'] ?? 'Ogrenci';
-    _selectedCoachId = widget.userData['coachUid'];
+    _selectedStudentId = widget.userData['studentUid'];
 
-    // Sınıf bilgisini ayrıştırma
+    // Rol'e göre başlangıç kimlik bilgisini ayarla
     if (_selectedRole == 'Ogrenci') {
       _identifierController = TextEditingController(text: widget.userData['number'] ?? '');
-      final className = widget.userData['class'] as String?;
-      if (className != null && className.contains('-')) {
-        final parts = className.split('-');
-        _selectedGrade = parts[0];
-        _selectedBranch = parts[1];
-      }
     } else {
       _identifierController = TextEditingController(text: widget.userData['username'] ?? '');
     }
 
-    _fetchCoaches();
+    // Sadece veli rolü için öğrencileri çek, gereksiz sorgu yapma
+    if (_selectedRole == 'Veli') {
+      _fetchStudents();
+    }
   }
 
-  Future<void> _fetchCoaches() async {
-    final snapshot = await FirebaseFirestore.instance.collection('users').where('role', isEqualTo: 'Eğitim Koçu').get();
+  Future<void> _fetchStudents() async {
+    final snapshot = await FirebaseFirestore.instance.collection('users').where('role', isEqualTo: 'Ogrenci').get();
     if (mounted) {
-      setState(() => _coaches = snapshot.docs);
+      setState(() => _students = snapshot.docs);
     }
   }
 
@@ -87,17 +80,29 @@ class _EditUserPageState extends State<EditUserPage> {
         'role': _selectedRole,
       };
 
+      // --- DEĞİŞİKLİK BURADA: MANTIK SADELEŞTİRİLDİ ---
+      // Role göre kaydedilecek ve silinecek alanları yönet
       if (_selectedRole == 'Ogrenci') {
         updatedData['number'] = _identifierController.text.trim();
-        updatedData['class'] = '${_selectedGrade}-${_selectedBranch}';
-        updatedData['coachUid'] = _selectedCoachId;
-        updatedData['username'] = FieldValue.delete(); // Diğer rollere ait alanı sil
-      } else {
+        // Öğrenci için alakasız alanları sil
+        updatedData['username'] = FieldValue.delete();
+        updatedData['studentUid'] = FieldValue.delete();
+      } else if (_selectedRole == 'Veli') {
         updatedData['username'] = _identifierController.text.trim();
+        updatedData['studentUid'] = _selectedStudentId;
+        // Veli için alakasız alanları sil
         updatedData['number'] = FieldValue.delete();
         updatedData['class'] = FieldValue.delete();
         updatedData['coachUid'] = FieldValue.delete();
+      } else { // Mentor, Koç, Admin
+        updatedData['username'] = _identifierController.text.trim();
+        // Bu roller için alakasız alanları sil
+        updatedData['number'] = FieldValue.delete();
+        updatedData['class'] = FieldValue.delete();
+        updatedData['coachUid'] = FieldValue.delete();
+        updatedData['studentUid'] = FieldValue.delete();
       }
+      // --- BİTTİ ---
 
       await _firestore.collection('users').doc(widget.userId).update(updatedData);
 
@@ -120,8 +125,6 @@ class _EditUserPageState extends State<EditUserPage> {
 
   @override
   Widget build(BuildContext context) {
-    bool isStudent = _selectedRole == 'Ogrenci';
-
     return Scaffold(
       appBar: AppBar(
         title: Text('Kullanıcıyı Düzenle', style: GoogleFonts.poppins()),
@@ -133,14 +136,23 @@ class _EditUserPageState extends State<EditUserPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Rol değiştirme yeteneği korunuyor
+              // Rol değiştirme hala aktif
               DropdownButtonFormField<String>(
                 value: _selectedRole,
                 decoration: const InputDecoration(labelText: 'Kullanıcı Rolü', border: OutlineInputBorder()),
-                items: ['Ogrenci', 'Mentor', 'Eğitim Koçu', 'Veli', 'Admin'].map((String value) {
+                items: ['Ogrenci', 'Veli', 'Mentor', 'Eğitim Koçu', 'Admin'].map((String value) {
                   return DropdownMenuItem<String>(value: value, child: Text(value));
                 }).toList(),
-                onChanged: (newValue) => setState(() => _selectedRole = newValue!),
+                onChanged: (newValue) {
+                  if (newValue != null) {
+                    setState(() {
+                      _selectedRole = newValue;
+                      if (newValue == 'Veli' && _students.isEmpty) {
+                        _fetchStudents();
+                      }
+                    });
+                  }
+                },
               ),
               const SizedBox(height: 16),
               TextFormField(
@@ -157,50 +169,30 @@ class _EditUserPageState extends State<EditUserPage> {
               const SizedBox(height: 16),
               TextFormField(
                 controller: _identifierController,
-                decoration: InputDecoration(labelText: isStudent ? 'Okul Numarası' : 'Kullanıcı Adı', border: const OutlineInputBorder()),
+                decoration: InputDecoration(labelText: _selectedRole == 'Ogrenci' ? 'Okul Numarası' : 'Kullanıcı Adı', border: const OutlineInputBorder()),
                 validator: (value) => value!.isEmpty ? 'Bu alan boş olamaz' : null,
               ),
 
-              if (isStudent) ...[
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: DropdownButtonFormField<String>(
-                        value: _selectedGrade,
-                        hint: const Text('Sınıf'),
-                        items: _gradeLevels.map((grade) => DropdownMenuItem(value: grade, child: Text(grade))).toList(),
-                        onChanged: (value) => setState(() => _selectedGrade = value),
-                        decoration: const InputDecoration(border: OutlineInputBorder()),
-                        validator: (v) => v == null ? 'Zorunlu' : null,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: DropdownButtonFormField<String>(
-                        value: _selectedBranch,
-                        hint: const Text('Şube'),
-                        items: _branchLetters.map((branch) => DropdownMenuItem(value: branch, child: Text(branch))).toList(),
-                        onChanged: (value) => setState(() => _selectedBranch = value),
-                        decoration: const InputDecoration(border: OutlineInputBorder()),
-                        validator: (v) => v == null ? 'Zorunlu' : null,
-                      ),
-                    ),
-                  ],
-                ),
+              // --- DEĞİŞİKLİK BURADA: ÖĞRENCİ İÇİN SINIF VE KOÇ SORULARI KALDIRILDI ---
+              if (_selectedRole == 'Veli') ...[
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
-                  value: _selectedCoachId,
-                  hint: const Text('Eğitim Koçu Seçin'),
-                  items: _coaches.map((doc) {
-                    final coach = doc.data() as Map<String, dynamic>;
-                    return DropdownMenuItem(value: doc.id, child: Text('${coach['name']} ${coach['surname']}'));
+                  value: _selectedStudentId,
+                  hint: const Text('İlişkili Öğrenciyi Seçin'),
+                  isExpanded: true,
+                  items: _students.map((doc) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    return DropdownMenuItem<String>(
+                      value: doc.id,
+                      child: Text('${data['name']} ${data['surname']}'),
+                    );
                   }).toList(),
-                  onChanged: (value) => setState(() => _selectedCoachId = value),
-                  decoration: const InputDecoration(labelText: 'Eğitim Koçu', border: OutlineInputBorder()),
-                  validator: (v) => v == null ? 'Koç seçimi zorunludur' : null,
+                  onChanged: (value) => setState(() => _selectedStudentId = value),
+                  decoration: const InputDecoration(labelText: 'Öğrenci', border: OutlineInputBorder()),
+                  validator: (v) => v == null ? 'Lütfen bir öğrenci seçin.' : null,
                 ),
               ],
+              // --- BİTTİ ---
 
               const SizedBox(height: 24),
               _isLoading

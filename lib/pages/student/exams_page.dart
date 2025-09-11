@@ -1,15 +1,14 @@
-// lib/pages/student/exams_page.dart
-
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:metabilim/models/exam_result.dart';
 import 'package:metabilim/services/firestore_service.dart';
 import 'package:metabilim/pages/student/exam_detail_page.dart';
-import 'package:metabilim/pages/student/exam_statistics_page.dart'; // YENİ GRAFİK SAYFASI
+import 'package:metabilim/pages/student/exam_statistics_page.dart';
 
 class ExamsPage extends StatefulWidget {
-  const ExamsPage({super.key});
+  final String? studentId;
+  const ExamsPage({super.key, this.studentId});
 
   @override
   State<ExamsPage> createState() => _ExamsPageState();
@@ -19,6 +18,7 @@ class _ExamsPageState extends State<ExamsPage> with SingleTickerProviderStateMix
   final FirestoreService _firestoreService = FirestoreService();
   late Future<List<StudentExamResult>> _examResultsFuture;
   late TabController _tabController;
+  late String _targetStudentId;
 
   List<StudentExamResult> _tytExams = [];
   List<StudentExamResult> _aytExams = [];
@@ -28,23 +28,21 @@ class _ExamsPageState extends State<ExamsPage> with SingleTickerProviderStateMix
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    _targetStudentId = widget.studentId ?? FirebaseAuth.instance.currentUser!.uid;
     _loadExams();
   }
 
   void _loadExams() {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      _examResultsFuture = _firestoreService.getStudentExams(user.uid);
-      _examResultsFuture.then((allExams) {
+    _examResultsFuture = _firestoreService.getStudentExams(_targetStudentId);
+    _examResultsFuture.then((allExams) {
+      if(mounted) {
         setState(() {
           _tytExams = allExams.where((exam) => exam.examType == 'TYT').toList();
           _aytExams = allExams.where((exam) => exam.examType == 'AYT').toList();
           _branchExams = allExams.where((exam) => exam.examType == 'BRANŞ').toList();
         });
-      });
-    } else {
-      _examResultsFuture = Future.value([]);
-    }
+      }
+    });
   }
 
   @override
@@ -57,7 +55,7 @@ class _ExamsPageState extends State<ExamsPage> with SingleTickerProviderStateMix
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text("Sınav Sonuçlarım", style: GoogleFonts.poppins()),
+        title: Text("Sınav Sonuçları", style: GoogleFonts.poppins()),
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
@@ -77,7 +75,7 @@ class _ExamsPageState extends State<ExamsPage> with SingleTickerProviderStateMix
             return Center(child: Text('Sonuçlar yüklenirken bir hata oluştu.', style: GoogleFonts.poppins()));
           }
           if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return Center(child: Text('Henüz görüntüleyecek bir sınav sonucunuz yok.', style: GoogleFonts.poppins()));
+            return Center(child: Text('Henüz görüntülenecek bir sınav sonucu yok.', style: GoogleFonts.poppins()));
           }
 
           return TabBarView(
@@ -93,6 +91,7 @@ class _ExamsPageState extends State<ExamsPage> with SingleTickerProviderStateMix
     );
   }
 
+  // --- DEĞİŞİKLİK BURADA: İSTATİSTİK BUTONU GERİ GELDİ ---
   Widget _buildExamList(List<StudentExamResult> exams, String examType) {
     if (exams.isEmpty) {
       return Center(child: Text('Bu kategoride sınav bulunmamaktadır.', style: GoogleFonts.poppins()));
@@ -149,4 +148,5 @@ class _ExamsPageState extends State<ExamsPage> with SingleTickerProviderStateMix
       ],
     );
   }
+// --- BİTTİ ---
 }
