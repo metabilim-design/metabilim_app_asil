@@ -1,14 +1,14 @@
+// lib/models/user_model.dart
 class AppUser {
   final String uid;
   final String name;
   final String surname;
   final String email;
   final String role;
-  final String? schoolNumber; // Öğrenciler için
-  final String? username;     // Diğer roller için
-  final String? studentUid;   // Veliler için
-  final String? coachUid;     // Öğrenciler için
-  final String? classId;      // Öğrenciler için
+  final String? schoolNumber; // Okul Numarası
+  final String? classId; // Sınıf ID'si
+  final String? className; // HATA İÇİN EKLENDİ: Sınıf Adı
+  final String? coachUid; // Atanmış koçun UID'si
 
   AppUser({
     required this.uid,
@@ -17,25 +17,51 @@ class AppUser {
     required this.email,
     required this.role,
     this.schoolNumber,
-    this.username,
-    this.studentUid,
-    this.coachUid,
     this.classId,
+    this.className, // HATA İÇİN EKLENDİ
+    this.coachUid,
   });
 
-  // Firestore'dan gelen veriyi AppUser modeline dönüştürmek için
+  // HATA İÇİN EKLENDİ: withClassName adında bir kopyalama metodu
+  // Bu metod, mevcut kullanıcı bilgilerini koruyarak sadece sınıf adını ekler.
+  AppUser withClassName(String? newClassName) {
+    return AppUser(
+      uid: uid,
+      name: name,
+      surname: surname,
+      email: email,
+      role: role,
+      schoolNumber: schoolNumber,
+      classId: classId,
+      className: newClassName, // Sadece sınıf adı güncellenir
+      coachUid: coachUid,
+    );
+  }
+
   factory AppUser.fromMap(Map<String, dynamic> data, String documentId) {
     return AppUser(
       uid: documentId,
       name: data['name'] ?? '',
       surname: data['surname'] ?? '',
       email: data['email'] ?? '',
-      role: data['role'] ?? '',
-      schoolNumber: data['number'], // Firestore'da 'number' olarak kayıtlı
-      username: data['username'],
-      studentUid: data['studentUid'],
+      role: data['role'] ?? 'Ogrenci',
+      schoolNumber: data['number'], // Veritabanındaki adı 'number'
+      classId: data['class'], // Veritabanındaki adı 'class'
       coachUid: data['coachUid'],
-      classId: data['class'], // Firestore'da 'class' olarak kayıtlı
+      // className burada doldurulmaz, çünkü user dökümanında bu bilgi yok.
+      // Bu bilgi, sonradan veritabanından okunarak eklenecek.
     );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'name': name,
+      'surname': surname,
+      'email': email,
+      'role': role,
+      'number': schoolNumber,
+      'class': classId,
+      'coachUid': coachUid,
+    };
   }
 }

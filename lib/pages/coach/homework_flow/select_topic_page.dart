@@ -7,7 +7,7 @@ import 'package:metabilim/models/user_model.dart';
 import 'package:metabilim/pages/coach/homework_flow/preview_schedule_page.dart';
 import 'package:metabilim/pages/coach/homework_flow/finalize_schedule_page.dart';
 
-// ----- GÜNCELLENMİŞ MODELLER (TÜM AKIŞ BUNU KULLANACAK) -----
+// ----- GÜNCELLENMİŞ VE MERKEZİ MODELLER (TÜM AKIŞ BUNU KULLANACAK) -----
 class Topic {
   final String konu;
   final int startPage;
@@ -15,6 +15,7 @@ class Topic {
   bool isSelected;
   final String bookPublisher;
   final String bookId;
+  final String lesson; // Konunun hangi derse ait olduğunu belirten önemli alan
 
   Topic({
     required this.konu,
@@ -23,17 +24,19 @@ class Topic {
     this.isSelected = false,
     required this.bookPublisher,
     required this.bookId,
+    required this.lesson,
   });
 
   int get pageCount => endPage - startPage > 0 ? endPage - startPage : 0;
 
-  factory Topic.fromMap(Map<String, dynamic> map, String publisher, String id) {
+  factory Topic.fromMap(Map<String, dynamic> map, String publisher, String id, String lessonName) {
     return Topic(
       konu: map['konu'] ?? 'İsimsiz Konu',
       startPage: map['start_page'] ?? 0,
       endPage: map['end_page'] ?? 0,
       bookPublisher: publisher,
       bookId: id,
+      lesson: lessonName,
     );
   }
 }
@@ -104,12 +107,13 @@ class _SelectTopicPageState extends State<SelectTopicPage> {
     for (var doc in booksSnapshot.docs) {
       final data = doc.data();
       final bookPublisher = data['publisher'] ?? 'Bilinmeyen Yayınevi';
+      final lessonName = '${data['level']} ${data['subject']}';
       allBooks.add(Book(
         id: doc.id,
         name: data['bookType'] ?? 'İsimsiz Kitap',
-        lesson: '${data['level']} ${data['subject']}',
+        lesson: lessonName,
         difficulty: data['difficulty'] ?? 3,
-        topics: List<Map<String, dynamic>>.from(data['topics'] ?? []).map((topicMap) => Topic.fromMap(topicMap, bookPublisher, doc.id)).toList(),
+        topics: List<Map<String, dynamic>>.from(data['topics'] ?? []).map((topicMap) => Topic.fromMap(topicMap, bookPublisher, doc.id, lessonName)).toList(),
       ));
     }
 
@@ -183,6 +187,7 @@ class _SelectTopicPageState extends State<SelectTopicPage> {
 
   @override
   Widget build(BuildContext context) {
+    // UI KODUNDA DEĞİŞİKLİK YOK...
     final lessonKeys = _totalPageQuotas.keys.where((k) => _booksByLesson.containsKey(k)).toList();
 
     return Scaffold(

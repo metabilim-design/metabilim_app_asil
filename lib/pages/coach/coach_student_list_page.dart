@@ -1,14 +1,16 @@
-// lib/pages/coach/coach_student_list_page.dart - GÜNCELLENMİŞ TAM KOD
-
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:metabilim/models/user_model.dart';
 import 'package:metabilim/services/firestore_service.dart';
-// ESKİ: import 'package:metabilim/pages/coach/coach_student_exam_list_page.dart';
-import 'package:metabilim/pages/coach/coach_student_detail_page.dart'; // YENİ: Yeni detay sayfasını import et
+import 'package:metabilim/pages/coach/coach_student_detail_page.dart';
+import 'package:metabilim/pages/coach/coach_student_exam_list_page.dart'; // Deneme sonuçları sayfası
 
 class CoachStudentListPage extends StatefulWidget {
-  const CoachStudentListPage({super.key});
+  // --- YENİ ---
+  // Hangi sekmeden gelindiğini tutacak olan değişken.
+  final String navigationSource;
+
+  const CoachStudentListPage({super.key, required this.navigationSource});
 
   @override
   State<CoachStudentListPage> createState() => _CoachStudentListPageState();
@@ -56,13 +58,24 @@ class _CoachStudentListPageState extends State<CoachStudentListPage> {
                   trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                   onTap: () {
                     // --- DEĞİŞİKLİK BURADA ---
-                    // Artık yeni detay sayfasına yönlendiriyoruz.
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => CoachStudentDetailPage(student: student),
-                      ),
-                    );
+                    // Gelen 'navigationSource' değerine göre yönlendirme yapılıyor.
+                    if (widget.navigationSource == 'deneme') {
+                      // Eğer "Deneme Sonuçları" sekmesindeysek, direkt sınav listesini aç.
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => CoachStudentExamListPage(student: student),
+                        ),
+                      );
+                    } else {
+                      // Diğer durumlarda (Öğrenciler sekmesi), normal detay sayfasını aç.
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => CoachStudentDetailPage(student: student),
+                        ),
+                      );
+                    }
                   },
                 ),
               );

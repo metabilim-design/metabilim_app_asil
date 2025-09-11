@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:metabilim/models/user_model.dart';
-// YENİ: Bir sonraki adımı import ediyoruz
-import 'package:metabilim/pages/coach/homework_flow/select_previous_schedule_page.dart';
+import 'package:metabilim/pages/coach/homework_flow/continue_select_date_range_page.dart'; // YENİ YÖNLENDİRME
 
 class ContinueSelectStudentPage extends StatefulWidget {
   const ContinueSelectStudentPage({Key? key}) : super(key: key);
@@ -142,12 +141,9 @@ class _ContinueSelectStudentPageState extends State<ContinueSelectStudentPage> {
           onPressed: _selectedStudent == null
               ? null
               : () {
-            // --- DEĞİŞİKLİK BURADA ---
-            // Artık bir sonraki adım olan program seçme sayfasına yönlendiriyoruz.
             Navigator.of(context).push(MaterialPageRoute(
-              builder: (context) => SelectPreviousSchedulePage(student: _selectedStudent!),
+              builder: (context) => ContinueSelectDateRangePage(student: _selectedStudent!),
             ));
-            // --- BİTTİ ---
           },
           style: ElevatedButton.styleFrom(
             padding: const EdgeInsets.symmetric(vertical: 16),
@@ -155,7 +151,7 @@ class _ContinueSelectStudentPageState extends State<ContinueSelectStudentPage> {
               borderRadius: BorderRadius.circular(12),
             ),
           ),
-          child: const Text('Devam Et', style: TextStyle(fontSize: 16)),
+          child: const Text('Tarih Seçimine Devam Et', style: TextStyle(fontSize: 16)),
         ),
       ),
     );

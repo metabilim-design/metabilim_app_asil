@@ -1,26 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:table_calendar/table_calendar.dart';
-import 'package:cloud_firestore/cloud_firestore.dart'; // Firestore için eklendi
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:metabilim/models/user_model.dart';
-import 'package:metabilim/pages/coach/homework_flow/assign_lesson_etuds_page.dart';
+import 'package:metabilim/pages/coach/homework_flow/select_previous_schedule_page.dart';
 
-class SelectDateRangePage extends StatefulWidget {
+class ContinueSelectDateRangePage extends StatefulWidget {
   final AppUser student;
 
-  const SelectDateRangePage({Key? key, required this.student}) : super(key: key);
+  const ContinueSelectDateRangePage({Key? key, required this.student}) : super(key: key);
 
   @override
-  _SelectDateRangePageState createState() => _SelectDateRangePageState();
+  _ContinueSelectDateRangePageState createState() => _ContinueSelectDateRangePageState();
 }
 
-class _SelectDateRangePageState extends State<SelectDateRangePage> {
+class _ContinueSelectDateRangePageState extends State<ContinueSelectDateRangePage> {
   CalendarFormat _calendarFormat = CalendarFormat.month;
   RangeSelectionMode _rangeSelectionMode = RangeSelectionMode.toggledOn;
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
   DateTime? _rangeStart;
   DateTime? _rangeEnd;
-  bool _isChecking = false; // Yükleme durumu için eklendi
+  bool _isChecking = false;
 
   Future<void> _checkForExistingSchedulesAndProceed() async {
     if (_rangeStart == null || _rangeEnd == null) return;
@@ -39,10 +39,8 @@ class _SelectDateRangePageState extends State<SelectDateRangePage> {
           final data = doc.data();
           final existingStart = (data['startDate'] as Timestamp).toDate();
           final existingEnd = (data['endDate'] as Timestamp).toDate();
-
-          // Firestore Timestamp'leri ve DateTime nesneleriyle güvenli karşılaştırma
           final newStart = _rangeStart!;
-          final newEnd = _rangeEnd!.add(const Duration(hours: 23, minutes: 59)); // Günü tam kapsasın diye
+          final newEnd = _rangeEnd!.add(const Duration(hours: 23, minutes: 59));
 
           if (newStart.isBefore(existingEnd) && newEnd.isAfter(existingStart)) {
             hasOverlap = true;
@@ -61,10 +59,10 @@ class _SelectDateRangePageState extends State<SelectDateRangePage> {
           );
         } else {
           Navigator.of(context).push(MaterialPageRoute(
-            builder: (context) => AssignLessonEtudsPage(
+            builder: (context) => SelectPreviousSchedulePage(
               student: widget.student,
-              startDate: _rangeStart!,
-              endDate: _rangeEnd!,
+              newStartDate: _rangeStart!,
+              newEndDate: _rangeEnd!,
             ),
           ));
         }
@@ -80,11 +78,12 @@ class _SelectDateRangePageState extends State<SelectDateRangePage> {
     }
   }
 
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('${widget.student.name} için Tarih Seç'),
+        title: Text('Yeni Tarih Aralığı Seç'),
       ),
       body: SingleChildScrollView(
         child: Column(
@@ -92,7 +91,7 @@ class _SelectDateRangePageState extends State<SelectDateRangePage> {
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: Text(
-                'Ödev programı için başlangıç ve bitiş tarihlerini seçin.',
+                'Devam edilecek programın uygulanacağı YENİ tarih aralığını seçin.',
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.titleMedium,
               ),
@@ -106,40 +105,16 @@ class _SelectDateRangePageState extends State<SelectDateRangePage> {
                 firstDay: DateTime.utc(2023, 1, 1),
                 lastDay: DateTime.utc(2030, 12, 31),
                 focusedDay: _focusedDay,
-                selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
                 rangeStartDay: _rangeStart,
                 rangeEndDay: _rangeEnd,
-                calendarFormat: _calendarFormat,
                 rangeSelectionMode: _rangeSelectionMode,
-                onDaySelected: (selectedDay, focusedDay) {
-                  if (!isSameDay(_selectedDay, selectedDay)) {
-                    setState(() {
-                      _selectedDay = selectedDay;
-                      _focusedDay = focusedDay;
-                      _rangeStart = null;
-                      _rangeEnd = null;
-                      _rangeSelectionMode = RangeSelectionMode.toggledOn;
-                    });
-                  }
-                },
                 onRangeSelected: (start, end, focusedDay) {
                   setState(() {
                     _selectedDay = null;
                     _focusedDay = focusedDay;
                     _rangeStart = start;
                     _rangeEnd = end;
-                    _rangeSelectionMode = RangeSelectionMode.toggledOn;
                   });
-                },
-                onFormatChanged: (format) {
-                  if (_calendarFormat != format) {
-                    setState(() {
-                      _calendarFormat = format;
-                    });
-                  }
-                },
-                onPageChanged: (focusedDay) {
-                  _focusedDay = focusedDay;
                 },
                 calendarStyle: CalendarStyle(
                   rangeHighlightColor: Theme.of(context).colorScheme.primary.withOpacity(0.2),
@@ -149,10 +124,6 @@ class _SelectDateRangePageState extends State<SelectDateRangePage> {
                   ),
                   rangeEndDecoration: BoxDecoration(
                     color: Theme.of(context).colorScheme.primary,
-                    shape: BoxShape.circle,
-                  ),
-                  todayDecoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.secondary.withOpacity(0.5),
                     shape: BoxShape.circle,
                   ),
                 ),
@@ -179,7 +150,7 @@ class _SelectDateRangePageState extends State<SelectDateRangePage> {
           ),
           child: _isChecking
               ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white))
-              : const Text('Devam Et', style: TextStyle(fontSize: 16)),
+              : const Text('Eski Program Seçimine Geç', style: TextStyle(fontSize: 16)),
         ),
       ),
     );

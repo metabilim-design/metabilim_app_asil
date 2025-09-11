@@ -1,10 +1,13 @@
+// lib/pages/coach/homework_flow/continue_select_topic_page.dart
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:metabilim/models/user_model.dart';
-import 'package:metabilim/pages/coach/homework_flow/preview_schedule_page.dart';
 import 'package:metabilim/pages/coach/homework_flow/finalize_schedule_page.dart';
-import 'package:metabilim/pages/coach/homework_flow/select_topic_page.dart'; // Modelleri (Topic, Book) buradan kullanacağız
+// HATA DÜZELTMESİ: EtudSlot'un tanımını içeren dosyayı import ediyoruz.
+import 'package:metabilim/pages/coach/homework_flow/preview_schedule_page.dart';
+import 'package:metabilim/pages/coach/homework_flow/select_topic_page.dart';
 
 class ContinueSelectTopicPage extends StatefulWidget {
   final AppUser student;
@@ -13,7 +16,7 @@ class ContinueSelectTopicPage extends StatefulWidget {
   final Map<String, int> lessonEtuds;
   final List<String> selectedMaterials;
   final int effortRating;
-  final Map<DateTime, List<EtudSlot>> schedule;
+  final Map<DateTime, List<EtudSlot>> schedule; // Bu satır artık hata vermeyecek
 
   const ContinueSelectTopicPage({
     Key? key,
@@ -31,6 +34,7 @@ class ContinueSelectTopicPage extends StatefulWidget {
 }
 
 class _ContinueSelectTopicPageState extends State<ContinueSelectTopicPage> {
+  // ... Geri kalan kodun tamamı aynı, hiçbir değişiklik yok ...
   bool _isLoading = true;
   final Map<String, int> _totalPageQuotas = {};
   final Map<String, int> _solvedPageQuotas = {};
@@ -58,13 +62,13 @@ class _ContinueSelectTopicPageState extends State<ContinueSelectTopicPage> {
     for (var doc in booksSnapshot.docs) {
       final data = doc.data();
       final bookPublisher = data['publisher'] ?? 'Bilinmeyen Yayınevi';
+      final lessonName = '${data['level']} ${data['subject']}';
       allBooks.add(Book(
         id: doc.id,
         name: data['bookType'] ?? 'İsimsiz Kitap',
-        lesson: '${data['level']} ${data['subject']}',
+        lesson: lessonName,
         difficulty: data['difficulty'] ?? 3,
-        // HATA BURADAYDI: Topic.fromMap metoduna eksik parametreler gönderiliyordu.
-        topics: List<Map<String, dynamic>>.from(data['topics'] ?? []).map((topicMap) => Topic.fromMap(topicMap, bookPublisher, doc.id)).toList(),
+        topics: List<Map<String, dynamic>>.from(data['topics'] ?? []).map((topicMap) => Topic.fromMap(topicMap, bookPublisher, doc.id, lessonName)).toList(),
       ));
     }
 
@@ -112,7 +116,6 @@ class _ContinueSelectTopicPageState extends State<ContinueSelectTopicPage> {
   }
 
   void _finalizeAndProceed() {
-    // HATA BURADAYDI: FinalizeSchedulePage'e Map<String, List<Book>> yerine List<Topic> gönderilmesi gerekiyordu.
     final List<Topic> allSelectedTopics = [];
     _booksByLesson.forEach((lesson, books) {
       for (var book in books) {
@@ -125,13 +128,12 @@ class _ContinueSelectTopicPageState extends State<ContinueSelectTopicPage> {
       return;
     }
 
-    // HATA TAM OLARAK BURADAYDI VE KESİN OLARAK ÇÖZÜLDÜ
     Navigator.push(context, MaterialPageRoute(builder: (context) => FinalizeSchedulePage(
       student: widget.student,
       startDate: widget.startDate,
       endDate: widget.endDate,
       initialSchedule: widget.schedule,
-      selectedTopics: allSelectedTopics, // Artık doğru formatta gönderiliyor.
+      selectedTopics: allSelectedTopics,
       allSelectedMaterialIds: widget.selectedMaterials,
       lessonEtuds: widget.lessonEtuds,
       effortRating: widget.effortRating,

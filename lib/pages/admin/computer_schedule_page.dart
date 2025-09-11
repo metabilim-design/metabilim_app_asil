@@ -7,8 +7,6 @@ import 'package:metabilim/models/user_model.dart';
 import 'package:collection/collection.dart'; // for firstWhereOrNull
 
 class ComputerSchedulePage extends StatefulWidget {
-  // DİKKAT: Artık bu sayfa direkt AppUser modelini alıyor.
-  // Bu değişikliği önceki adımdaki digital_lesson_settings_page.dart dosyasında yapmıştık.
   final AppUser student;
 
   const ComputerSchedulePage({super.key, required this.student});
@@ -35,7 +33,14 @@ class _ComputerSchedulePageState extends State<ComputerSchedulePage> with Single
     _loadInitialData();
   }
 
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadInitialData() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
     try {
       final firestore = FirebaseFirestore.instance;
@@ -64,37 +69,63 @@ class _ComputerSchedulePageState extends State<ComputerSchedulePage> with Single
         _allDigitalAssignments[computerName] = {};
         schedule.forEach((day, slots) {
           (slots as Map<String, dynamic>).forEach((timeSlot, studentId) {
-            _allDigitalAssignments[computerName]!['${day}_$timeSlot'] = studentId;
+            _allDigitalAssignments[computerName]!['${day}_$timeSlot'] = studentId.toString();
           });
         });
       }
     } catch (e) {
-      print("Veri yüklenirken hata: $e");
+      debugPrint("Veri yüklenirken hata: $e");
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
+  // --- SON DÜZELTİLMİŞ, NİHAİ FONKSİYON ---
   Future<void> _assignStudentToComputer(String day, String timeSlot, String computerName) async {
     final firestore = FirebaseFirestore.instance;
+    final studentId = widget.student.uid;
+    final uniqueKey = '${day}_$timeSlot';
+
     WriteBatch batch = firestore.batch();
 
-    // Bu öğrencinin bu saatteki mevcut tüm atamalarını sil (başka bir PC'deyse)
-    for (var computerDoc in _computers) {
-      final name = (computerDoc.data() as Map<String, dynamic>)['name'];
-      batch.update(firestore.collection('digital_schedules').doc(name), {
+    // 1. Bu öğrencinin bu saatte başka bir bilgisayarda mevcut bir ataması var mı diye bul.
+    final currentAssignment = _allDigitalAssignments.entries
+        .firstWhereOrNull((entry) => entry.value[uniqueKey] == studentId);
+
+    // 2. Eğer mevcut bir ataması varsa, o eski atamayı SİL.
+    // Bu yöntem, diğer öğrencilerin atamalarını etkilemez.
+    if (currentAssignment != null) {
+      final oldComputerName = currentAssignment.key;
+      final oldDocRef = firestore.collection('digital_schedules').doc(oldComputerName);
+      batch.update(oldDocRef, {
         'schedule.$day.$timeSlot': FieldValue.delete(),
       });
     }
 
-    // Yeni atamayı yap
-    batch.set(firestore.collection('digital_schedules').doc(computerName), {
-      'schedule': { day: { timeSlot: widget.student.uid } }
+    // 3. Yeni atamayı YAP. `set` ve `merge:true` kullanarak döküman olmasa bile oluşturur
+    // ve diğer saatleri ezmeden veriyi doğru bir şekilde ekler.
+    final newDocRef = firestore.collection('digital_schedules').doc(computerName);
+    batch.set(newDocRef, {
+      'schedule': {
+        day: {
+          timeSlot: studentId
+        }
+      }
     }, SetOptions(merge: true));
 
-    await batch.commit();
-    _loadInitialData(); // Arayüzü güncelle
+    try {
+      await batch.commit();
+      _loadInitialData(); // Arayüzü güncelle
+    } catch (e) {
+      debugPrint("Dijital etüt ataması sırasında hata: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Atama yapılırken bir hata oluştu: $e')),
+        );
+      }
+    }
   }
+
 
   Future<void> _removeAssignment(String day, String timeSlot, String computerName) async {
     await FirebaseFirestore.instance.collection('digital_schedules').doc(computerName).update({
@@ -124,8 +155,6 @@ class _ComputerSchedulePageState extends State<ComputerSchedulePage> with Single
   }
 
   Widget _buildDaySchedule(String day) {
-    // DİKKAT: Veritabanındaki gün isimleri büyük harfle başladığı için,
-    // öğrencinin programını çekerken de büyük harfle arama yapıyoruz.
     final slotsForDay = _studentTimetable[day] ?? [];
     if (slotsForDay.isEmpty) {
       return Center(child: Padding(
@@ -140,7 +169,6 @@ class _ComputerSchedulePageState extends State<ComputerSchedulePage> with Single
         final timeSlot = slotsForDay[index];
         final uniqueKey = '${day}_$timeSlot';
 
-        // Bu öğrencinin bu saatte bir ataması var mı, varsa hangi bilgisayarda?
         final currentAssignment = _allDigitalAssignments.entries
             .firstWhereOrNull((entry) => entry.value[uniqueKey] == widget.student.uid);
 
@@ -164,12 +192,13 @@ class _ComputerSchedulePageState extends State<ComputerSchedulePage> with Single
               final bool isThisStudent = assignedStudentId == widget.student.uid;
 
               return ListTile(
-                title: Text(computerName, style: GoogleFonts.poppins()), // DÜZELTME: ID yerine İSİM gösteriliyor
+                title: Text(computerName, style: GoogleFonts.poppins()),
                 trailing: ElevatedButton(
                   onPressed: (isOccupied && !isThisStudent) ? null : () => _assignStudentToComputer(day, timeSlot, computerName),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: isThisStudent ? Colors.green : Theme.of(context).primaryColor,
                     foregroundColor: Colors.white,
+                    disabledBackgroundColor: Colors.grey.shade400,
                   ),
                   child: Text(isThisStudent ? 'Atandı' : (isOccupied ? 'Dolu' : 'Ata')),
                 ),

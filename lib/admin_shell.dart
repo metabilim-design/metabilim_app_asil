@@ -8,12 +8,9 @@ import 'package:metabilim/pages/admin/class_management_page.dart';
 import 'package:metabilim/pages/admin/coach_management_page.dart';
 import 'package:metabilim/pages/admin/digital_lesson_settings_page.dart';
 import 'package:metabilim/pages/admin/exam_analysis_page.dart';
-
-// --- KULLANILACAK SAYFAYI IMPORT EDİYORUZ ---
 import 'package:metabilim/pages/admin/schedule_settings_page.dart';
-
-// --- YENİ SAYFAYI ŞİMDİLİK KULLANMIYORUZ ---
-// import 'package:metabilim/pages/admin/class_timetable_management_page.dart';
+// --- YENİ SAYFAMIZI IMPORT EDİYORUZ ---
+import 'package:metabilim/pages/admin/computer_management_page.dart';
 
 
 class AdminShell extends StatefulWidget {
@@ -26,25 +23,28 @@ class AdminShell extends StatefulWidget {
 class _AdminShellState extends State<AdminShell> {
   int _selectedIndex = 0;
 
-  // --- Sayfa listesini isteğine göre düzenliyoruz ---
+  // --- Sayfa listesine YENİ sayfamızı ekliyoruz ---
   static final List<Widget> _adminPages = <Widget>[
     const AdminDashboardPage(),
     const UserManagementPage(),
     const ClassManagementPage(),
     const CoachManagementPage(),
     const ExamAnalysisPage(),
+    const ComputerManagementPage(), // YENİ EKLENDİ
     const DigitalLessonSettingsPage(),
-    const ScheduleSettingsPage(), // DEĞİŞİKLİK: İstediğin gibi bu sayfayı geri getirdik
+    const ScheduleSettingsPage(),
   ];
 
+  // --- Sayfa başlıkları listesini güncelliyoruz ---
   static const List<String> _pageTitles = <String>[
     'Genel Bakış',
     'Kullanıcı Yönetimi',
     'Sınıf Yönetimi',
     'Eğitim Koçu Yönetimi',
     'Sınav Sonucu Yükle',
+    'Bilgisayar Yönetimi', // YENİ EKLENDİ
     'Dijital Ders Ayarları',
-    'Etüt Şablon Ayarları', // Başlığı sayfanın içeriğiyle daha uyumlu hale getirdim
+    'Etüt Şablon Ayarları',
   ];
 
   void _onItemTapped(int index) {
@@ -88,14 +88,20 @@ class _AdminShellState extends State<AdminShell> {
                 icon: Icons.upload_file_outlined,
                 title: 'Sınav Sonucu Yükle',
                 index: 4),
+            // --- YENİ MENÜ ELEMANI ---
+            _buildDrawerItem(
+                icon: Icons.desktop_mac_outlined, // Yeni ikon
+                title: 'Bilgisayar Yönetimi',
+                index: 5),
+            // --- DİĞERLERİNİN INDEX'LERİ GÜNCELLENDİ ---
             _buildDrawerItem(
                 icon: Icons.computer_outlined,
                 title: 'Dijital Ders Ayarları',
-                index: 5),
+                index: 6),
             _buildDrawerItem(
                 icon: Icons.timer_outlined,
-                title: 'Etüt Şablon Ayarları', // Başlık güncellendi
-                index: 6),
+                title: 'Etüt Şablon Ayarları',
+                index: 7),
 
             const Divider(),
             ListTile(

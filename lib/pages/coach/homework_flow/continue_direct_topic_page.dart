@@ -4,15 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:metabilim/models/user_model.dart';
-import 'package:metabilim/pages/coach/homework_flow/preview_schedule_page.dart';
 import 'package:metabilim/pages/coach/homework_flow/finalize_schedule_page.dart';
+// HATA DÜZELTMESİ: EtudSlot'un tanımını içeren dosyayı import ediyoruz.
+import 'package:metabilim/pages/coach/homework_flow/preview_schedule_page.dart';
 import 'package:metabilim/pages/coach/homework_flow/select_topic_page.dart';
 
 class ContinueDirectTopicPage extends StatefulWidget {
   final AppUser student;
   final DateTime startDate;
   final DateTime endDate;
-  final Map<DateTime, List<EtudSlot>> schedule;
+  final Map<DateTime, List<EtudSlot>> schedule; // Bu satır artık hata vermeyecek
   final DocumentSnapshot previousScheduleDoc;
 
   const ContinueDirectTopicPage({
@@ -29,6 +30,7 @@ class ContinueDirectTopicPage extends StatefulWidget {
 }
 
 class _ContinueDirectTopicPageState extends State<ContinueDirectTopicPage> {
+  // ... Geri kalan kodun tamamı aynı, hiçbir değişiklik yok ...
   bool _isLoading = true;
   String? _errorMessage;
   final Map<String, int> _totalPageQuotas = {};
@@ -84,13 +86,14 @@ class _ContinueDirectTopicPageState extends State<ContinueDirectTopicPage> {
         final data = doc.data();
         final bookPublisher = data['publisher'] ?? 'Bilinmeyen Yayınevi';
         List<dynamic> topicsRaw = data['topics'] is List ? data['topics'] : [];
+        final lessonName = '${data['level']} ${data['subject']}';
 
         allBooks.add(Book(
           id: doc.id,
           name: data['bookType'] ?? 'İsimsiz Kitap',
-          lesson: '${data['level']} ${data['subject']}',
+          lesson: lessonName,
           difficulty: data['difficulty'] ?? 3,
-          topics: List<Map<String, dynamic>>.from(topicsRaw).map((topicMap) => Topic.fromMap(topicMap, bookPublisher, doc.id)).toList(),
+          topics: List<Map<String, dynamic>>.from(topicsRaw).map((topicMap) => Topic.fromMap(topicMap, bookPublisher, doc.id, lessonName)).toList(),
         ));
       } catch (e) {
         print('HATA: ${doc.id} IDli kitap işlenirken bir sorun oluştu: $e');
