@@ -64,7 +64,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '496213153614',
     projectId: 'metabilim-4ef76',
     storageBucket: 'metabilim-4ef76.firebasestorage.app',
-    iosBundleId: 'com.example.metabilim',
+    iosBundleId: 'com.metabilim.metabilim',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
@@ -73,7 +73,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '496213153614',
     projectId: 'metabilim-4ef76',
     storageBucket: 'metabilim-4ef76.firebasestorage.app',
-    iosBundleId: 'com.example.metabilim',
+    iosBundleId: 'com.metabilim.metabilim',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(
